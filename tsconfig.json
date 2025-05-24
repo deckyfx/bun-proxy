@@ -23,6 +23,14 @@
     // Some stricter flags (disabled by default)
     "noUnusedLocals": false,
     "noUnusedParameters": false,
-    "noPropertyAccessFromIndexSignature": false
+    "noPropertyAccessFromIndexSignature": false,
+
+    "paths": {
+      "@src/*": ["./src/*"],
+      "@app/*": ["./src/dashboard/app/*"],
+      "@db/*": ["./src/db/*"],
+      "@models/*": ["./src/models/*"],
+      "@backend/*": ["./src/servers/dashboard/*"]
+    }
   }
 }
