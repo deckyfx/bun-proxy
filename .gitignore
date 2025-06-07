@@ -11,8 +11,8 @@ coverage
 *.lcov
 
 # logs
-logs
-_.log
+*.log
+report.txt
 report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # dotenv environment variable files
@@ -35,3 +35,4 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 data/*
 src/db/drizzle/*
+package.json

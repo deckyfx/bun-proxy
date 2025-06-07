@@ -79,6 +79,15 @@ The project uses Bun's native SSR capabilities with React streaming and automati
 - Use the Button component for all interactive buttons
 - Implement proper focus and disabled states
 
+## Developer Guidelines
+
+### Code Quality Standards
+After modifying any TypeScript files, ALWAYS run:
+1. **Type checking**: `bun run tsc --noEmit` to ensure no TypeScript errors
+2. **Code formatting**: Run prettier/formatter to maintain consistent code style
+
+These checks are mandatory before considering any task complete. Fix all TypeScript errors and formatting issues immediately after making changes.
+
 ## Session Journaling
 
 When the user requests to "journal this session", always:

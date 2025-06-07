@@ -2,7 +2,7 @@
   "folders": [
     {
       "name": "bun-proxy",
-      "path": ".."
+      "path": "."
     }
   ],
   "settings": {

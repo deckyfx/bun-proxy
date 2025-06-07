@@ -1,18 +1,43 @@
 import * as dgram from "dgram";
-import { DNSProvider } from "./providers";
+import { BaseProvider } from "./providers";
 import { DNSQueryTracker } from "./tracker";
+import type { BaseDriver as LogsBaseDriver } from "./drivers/logs/BaseDriver";
+import type { BaseDriver as CachesBaseDriver } from "./drivers/caches/BaseDriver";
+import type { BaseDriver as BlacklistBaseDriver } from "./drivers/blacklist/BaseDriver";
+import type { BaseDriver as WhitelistBaseDriver } from "./drivers/whitelist/BaseDriver";
+import { ConsoleDriver } from "./drivers/logs/ConsoleDriver";
+import { InMemoryDriver as CacheInMemoryDriver } from "./drivers/caches/InMemoryDriver";
+import { InMemoryDriver as BlacklistInMemoryDriver } from "./drivers/blacklist/InMemoryDriver";
+import { InMemoryDriver as WhitelistInMemoryDriver } from "./drivers/whitelist/InMemoryDriver";
+
+export interface DNSServerDrivers {
+  logs?: LogsBaseDriver;
+  cache?: CachesBaseDriver;
+  blacklist?: BlacklistBaseDriver;
+  whitelist?: WhitelistBaseDriver;
+}
 
 export class DNSProxyServer {
   private server?: dgram.Socket;
   private isRunning: boolean = false;
   private port: number;
-  private providers: DNSProvider[];
+  private providers: BaseProvider[];
   private tracker: DNSQueryTracker;
+  private drivers: DNSServerDrivers = {};
 
-  constructor(port: number = 53, providers: DNSProvider[]) {
+  constructor(port: number = 53, providers: BaseProvider[], drivers?: DNSServerDrivers) {
     this.port = port;
     this.providers = providers;
     this.tracker = new DNSQueryTracker();
+    
+    // Set default drivers
+    this.drivers = {
+      logs: new ConsoleDriver(),
+      cache: new CacheInMemoryDriver(),
+      blacklist: new BlacklistInMemoryDriver(),
+      whitelist: new WhitelistInMemoryDriver(),
+      ...drivers // Override defaults with provided drivers
+    };
   }
 
   async start(): Promise<void> {
@@ -24,7 +49,7 @@ export class DNSProxyServer {
 
     this.server.on("message", async (msg: Buffer, rinfo: dgram.RemoteInfo) => {
       try {
-        const response = await this.handleDNSQuery(msg);
+        const response = await this.handleDNSQuery(msg, { address: rinfo.address, port: rinfo.port });
         this.server?.send(response, rinfo.port, rinfo.address);
       } catch (error) {
         console.error("DNS query handling error:", error);
@@ -64,16 +89,100 @@ export class DNSProxyServer {
     });
   }
 
-  private async handleDNSQuery(query: Buffer): Promise<Buffer> {
+  private async handleDNSQuery(query: Buffer, clientInfo?: { address: string; port: number }): Promise<Buffer> {
+    const startTime = Date.now();
     const queryInfo = this.parseDNSQuery(query);
+    const { v4: uuidv4 } = require('uuid');
+    const requestId = uuidv4();
+    
+    // Log the incoming request
+    if (this.drivers.logs) {
+      await this.drivers.logs.log({
+        type: 'request',
+        requestId,
+        timestamp: new Date(),
+        level: 'info',
+        query: {
+          domain: queryInfo.domain,
+          type: queryInfo.type,
+          querySize: query.length,
+          clientIP: clientInfo?.address,
+          clientPort: clientInfo?.port
+        },
+        source: 'client',
+        cached: false, // TODO: check cache
+        blocked: false, // TODO: check blacklist
+        whitelisted: false, // TODO: check whitelist
+        attempt: 1
+      });
+    }
 
     // Try providers in order based on usage optimization
     for (const provider of this.getOptimizedProviderOrder()) {
       try {
         const response = await provider.resolve(query);
+        const responseTime = Date.now() - startTime;
+        
         this.tracker.recordQuery(provider.name, queryInfo.domain);
+        
+        // Log the successful response
+        if (this.drivers.logs) {
+          await this.drivers.logs.log({
+            type: 'response',
+            requestId,
+            timestamp: new Date(),
+            level: 'info',
+            query: {
+              domain: queryInfo.domain,
+              type: queryInfo.type,
+              querySize: query.length,
+              clientIP: clientInfo?.address,
+              clientPort: clientInfo?.port
+            },
+            provider: provider.name,
+            attempt: 1,
+            responseTime,
+            response: {
+              responseSize: response.length
+            },
+            success: true,
+            cached: false,
+            blocked: false,
+            whitelisted: false,
+            source: 'client'
+          });
+        }
+        
         return response;
       } catch (error) {
+        const responseTime = Date.now() - startTime;
+        
+        // Log the failed response
+        if (this.drivers.logs) {
+          await this.drivers.logs.log({
+            type: 'response',
+            requestId,
+            timestamp: new Date(),
+            level: 'error',
+            query: {
+              domain: queryInfo.domain,
+              type: queryInfo.type,
+              querySize: query.length,
+              clientIP: clientInfo?.address,
+              clientPort: clientInfo?.port
+            },
+            provider: provider.name,
+            attempt: 1,
+            responseTime,
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+            cached: false,
+            blocked: false,
+            whitelisted: false,
+            source: 'client'
+          });
+        }
+        
         console.warn(`Provider ${provider.name} failed:`, error);
         continue;
       }
@@ -118,7 +227,7 @@ export class DNSProxyServer {
     return { domain, type: "UNKNOWN" };
   }
 
-  private getOptimizedProviderOrder(): DNSProvider[] {
+  private getOptimizedProviderOrder(): BaseProvider[] {
     // Prioritize based on usage tracking to minimize NextDNS usage
     return this.providers.sort((a, b) => {
       const aUsage = this.tracker.getProviderUsage(a.name);
@@ -132,12 +241,77 @@ export class DNSProxyServer {
     });
   }
 
+  // Driver configuration methods
+  setLogDriver(driver: LogsBaseDriver): void {
+    this.drivers.logs = driver;
+  }
+
+  setCacheDriver(driver: CachesBaseDriver): void {
+    this.drivers.cache = driver;
+  }
+
+  setBlacklistDriver(driver: BlacklistBaseDriver): void {
+    this.drivers.blacklist = driver;
+  }
+
+  setWhitelistDriver(driver: WhitelistBaseDriver): void {
+    this.drivers.whitelist = driver;
+  }
+
+  setDrivers(drivers: DNSServerDrivers): void {
+    this.drivers = { ...this.drivers, ...drivers };
+  }
+
+  getDrivers(): DNSServerDrivers {
+    return { ...this.drivers };
+  }
+
+  // Individual driver getters (with defaults, so they're never undefined)
+  getLogDriver(): LogsBaseDriver {
+    return this.drivers.logs!;
+  }
+
+  getCacheDriver(): CachesBaseDriver {
+    return this.drivers.cache!;
+  }
+
+  getBlacklistDriver(): BlacklistBaseDriver {
+    return this.drivers.blacklist!;
+  }
+
+  getWhitelistDriver(): WhitelistBaseDriver {
+    return this.drivers.whitelist!;
+  }
+
+  // Check if drivers are configured
+  hasLogDriver(): boolean {
+    return !!this.drivers.logs;
+  }
+
+  hasCacheDriver(): boolean {
+    return !!this.drivers.cache;
+  }
+
+  hasBlacklistDriver(): boolean {
+    return !!this.drivers.blacklist;
+  }
+
+  hasWhitelistDriver(): boolean {
+    return !!this.drivers.whitelist;
+  }
+
   getStatus() {
     return {
       isRunning: this.isRunning,
       port: this.port,
       providers: this.providers.map((p) => p.name),
       stats: this.tracker.getStats(),
+      drivers: {
+        logs: !!this.drivers.logs,
+        cache: !!this.drivers.cache,
+        blacklist: !!this.drivers.blacklist,
+        whitelist: !!this.drivers.whitelist,
+      },
     };
   }
 }

@@ -1,6 +1,6 @@
 import { promisify } from 'util';
 import { dnsManager } from '@src/dns';
-import { Config } from './config';
+import Config from "@src/config";
 import type { DNSTestRequest, DNSTestResponse } from '@typed/dns';
 
 export async function Test(req: any): Promise<Response> {
@@ -29,14 +29,14 @@ export async function Test(req: any): Promise<Response> {
       }
 
       // Start server with the test configId
-      await dnsManager.start(originalPort || config.DNS_PORT, {
+      await dnsManager.start(originalPort || Config.DNS_PORT, {
         nextdnsConfigId: configId,
       });
 
       // Test DNS resolution using our DNS server
       const { Resolver } = await import('dns');
       const resolver = new Resolver();
-      resolver.setServers([`127.0.0.1:${originalPort || config.DNS_PORT}`]);
+      resolver.setServers([`127.0.0.1:${originalPort || Config.DNS_PORT}`]);
       
       const resolveA = promisify(resolver.resolve4.bind(resolver));
       
@@ -94,5 +94,5 @@ export async function Test(req: any): Promise<Response> {
 }
 
 export default {
-  test: { POST: Test },
+  test: { GET: Test },
 };

@@ -9,7 +9,10 @@
     "drizzle": "bunx drizzle-kit generate --dialect sqlite --schema ./src/db/schema/index.ts --out ./src/db/drizzle",
     "migrate": "bun run src/db/migrations/index.ts",
     "seed": "bun run src/db/seeds/index.ts",
-    "setup-db": "bun run drizzle && bun run migrate && bun run seed"
+    "setup-db": "bun run drizzle && bun run migrate && bun run seed",
+    "test:server": "bun run src/index.ts",
+    "test:hit": "bun run test-dns.ts",
+    "test:serverhit": "bun test:dev > ./server.log 2>&1 & DEV_PID=$!; sleep 2; bun test:hit > ./client.log 2>&1; kill $DEV_PID"
   },
   "dependencies": {
     "drizzle-orm": "^0.43.1",
@@ -18,6 +21,7 @@
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-router-dom": "^7.6.0",
+    "uuid": "^11.1.0",
     "zustand": "^5.0.5"
   },
   "devDependencies": {
@@ -26,6 +30,7 @@
     "@types/jsonwebtoken": "^9.0.9",
     "@types/react": "^19.1.6",
     "@types/react-dom": "^19.1.6",
+    "@types/uuid": "^10.0.0",
     "drizzle-kit": "^0.31.1",
     "tailwindcss": "^4.1.8"
   },
