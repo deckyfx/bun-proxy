@@ -1,77 +1,34 @@
-import { Signin, Signup, Logout, Refresh } from "./auth";
-import { Me } from "./user";
-import { Health } from "./system";
-import { Status, Start, Stop, Toggle } from "./dns";
+import ScopedRoutes from "./routes";
 
-type RouteHandler = (req: any) => Promise<Response>;
-type RouteConfig = { [K in 'GET' | 'POST' | 'PUT' | 'DELETE']?: RouteHandler };
-
-const scopedRoutes: Record<string, Record<string, RouteConfig>> = {
-  auth: {
-    signin: { POST: Signin },
-    signup: { POST: Signup },
-    logout: { POST: Logout },
-    refresh: { POST: Refresh },
-  },
-  user: {
-    me: { GET: Me, POST: Me },
-  },
-  system: {
-    health: { GET: Health },
-  },
-  dns: {
-    status: { GET: Status },
-    start: { POST: Start },
-    stop: { POST: Stop },
-    toggle: { POST: Toggle },
-  },
-};
-
-async function ApiGET(req: Bun.BunRequest<"/api/:scope/:command">): Promise<Response> {
+async function ApiHandler(
+  req: Bun.BunRequest<"/api/:scope/:command">
+): Promise<Response> {
   const { scope, command } = req.params;
-  
-  const scopeRoutes = scopedRoutes[scope];
-  if (!scopeRoutes) {
+  const method = req.method as 'GET' | 'POST' | 'PUT' | 'DELETE';
+
+  const routes = ScopedRoutes[scope];
+  if (!routes) {
     return new Response("Scope not found", { status: 404 });
   }
 
-  const route = scopeRoutes[command];
-  if (!route || !route.GET) {
-    return new Response("Endpoint not found or method not allowed", { status: 404 });
+  const route = routes[command];
+  if (!route || !route[method]) {
+    return new Response("Endpoint not found or method not allowed", {
+      status: 404,
+    });
   }
 
   try {
-    return await route.GET(req);
+    return await route[method]!(req);
   } catch (error) {
-    console.error("API GET Error:", error);
-    return new Response("Internal Server Error", { status: 500 });
-  }
-}
-
-async function ApiPOST(req: Bun.BunRequest<"/api/:scope/:command">): Promise<Response> {
-  const { scope, command } = req.params;
-  
-  const scopeRoutes = scopedRoutes[scope];
-  if (!scopeRoutes) {
-    return new Response("Scope not found", { status: 404 });
-  }
-
-  const route = scopeRoutes[command];
-  if (!route || !route.POST) {
-    return new Response("Endpoint not found or method not allowed", { status: 404 });
-  }
-
-  try {
-    return await route.POST(req);
-  } catch (error) {
-    console.error("API POST Error:", error);
+    console.error(`API ${method} Error:`, error);
     return new Response("Internal Server Error", { status: 500 });
   }
 }
 
 const ApiRoute = {
-  GET: ApiGET,
-  POST: ApiPOST,
+  GET: ApiHandler,
+  POST: ApiHandler,
 };
 
 export default ApiRoute;

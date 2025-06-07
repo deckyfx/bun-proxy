@@ -18,3 +18,7 @@ export async function Logout(
     return new Response("Unauthorized", { status: 401 });
   }
 }
+
+export default {
+  logout: { POST: Logout },
+};

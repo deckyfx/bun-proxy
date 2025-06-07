@@ -15,6 +15,6 @@ export async function Me(
   return Response.json(user);
 }
 
-export const MeRoute = {
-  POST: Me,
+export default {
+  me: { GET: Me, POST: Me },
 };

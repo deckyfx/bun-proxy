@@ -5,3 +5,7 @@ export async function Health(
     status: "ok",
   });
 }
+
+export default {
+  health: { GET: Health },
+};

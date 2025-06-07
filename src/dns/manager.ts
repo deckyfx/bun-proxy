@@ -5,14 +5,19 @@ import config from '@src/config';
 class DNSManager {
   private server?: DNSProxyServer;
   private isEnabled: boolean = false;
+  private currentNextDnsConfigId?: string;
 
-  async start(port?: number, options?: { enableWhitelist?: boolean; secondaryDns?: string }): Promise<void> {
+  async start(port?: number, options?: { enableWhitelist?: boolean; secondaryDns?: string; nextdnsConfigId?: string }): Promise<void> {
     if (this.server) {
       throw new Error('DNS server is already running');
     }
 
+    // Use provided config ID or fall back to environment variable
+    const nextdnsConfigId = options?.nextdnsConfigId || config.NEXTDNS_CONFIG_ID;
+    this.currentNextDnsConfigId = nextdnsConfigId;
+
     const providers = [
-      new NextDNSProvider(config.NEXTDNS_CONFIG_ID),
+      new NextDNSProvider(nextdnsConfigId),
       new CloudflareProvider(),
       new GoogleProvider(),
       new OpenDNSProvider()
@@ -43,8 +48,13 @@ class DNSManager {
   getStatus() {
     return {
       enabled: this.isEnabled,
-      server: this.server?.getStatus() || null
+      server: this.server?.getStatus() || null,
+      currentNextDnsConfigId: this.currentNextDnsConfigId
     };
+  }
+
+  getCurrentNextDnsConfigId(): string | undefined {
+    return this.currentNextDnsConfigId;
   }
 }
 

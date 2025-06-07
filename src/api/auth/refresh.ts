@@ -24,3 +24,7 @@ export async function Refresh(
     return new Response("Invalid token", { status: 403 });
   }
 }
+
+export default {
+  refresh: { POST: Refresh },
+};

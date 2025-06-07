@@ -1,8 +1,32 @@
 import Config from "@src/config";
+import { dnsManager } from "@src/dns";
 
 import IndexRoute from "./view/index";
 import HydrateRoute from "./view/hydrate";
 import ApiRoute from "./api/index";
+
+// Graceful shutdown handling
+process.on("SIGINT", async () => {
+  console.log("\n🛑 Received SIGINT, shutting down gracefully...");
+  try {
+    await dnsManager.stop();
+    console.log("✅ DNS server stopped gracefully");
+  } catch (error) {
+    console.error("❌ Error stopping DNS server:", error);
+  }
+  process.exit(0);
+});
+
+process.on("SIGTERM", async () => {
+  console.log("\n🛑 Received SIGTERM, shutting down gracefully...");
+  try {
+    await dnsManager.stop();
+    console.log("✅ DNS server stopped gracefully");
+  } catch (error) {
+    console.error("❌ Error stopping DNS server:", error);
+  }
+  process.exit(0);
+});
 
 export default Bun.serve({
   port: Config.DASHBOARD_PORT,
@@ -38,3 +62,9 @@ export default Bun.serve({
     },
   },
 });
+
+if (Config.DEBUG_START_DNS_SERVER) {
+  setTimeout(() => {
+    dnsManager.start();
+  }, 1000);
+}

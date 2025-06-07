@@ -21,6 +21,6 @@ export async function Signup(
   });
 }
 
-export const SignupRoute = {
-  POST: Signup,
+export default {
+  signup: { POST: Signup },
 };

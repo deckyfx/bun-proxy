@@ -31,6 +31,6 @@ export async function Signin(
   return Response.json({ accessToken, refreshToken });
 }
 
-export const SigninRoute = {
-  POST: Signin,
+export default {
+  signin: { POST: Signin },
 };

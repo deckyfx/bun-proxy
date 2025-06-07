@@ -1,1 +1,5 @@
-export { Health } from "./health";
+import health from './health';
+
+export default {
+  ...health,
+};

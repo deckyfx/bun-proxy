@@ -1,4 +1,5 @@
 import React from 'react';
+import { Tooltip } from './Tooltip';
 
 interface SwitchProps {
   checked: boolean;
@@ -6,6 +7,8 @@ interface SwitchProps {
   disabled?: boolean;
   label?: string;
   description?: string;
+  tooltip?: string;
+  tooltipPosition?: 'top' | 'bottom' | 'left' | 'right';
   className?: string;
 }
 
@@ -15,17 +18,29 @@ export function Switch({
   disabled = false, 
   label, 
   description, 
+  tooltip,
+  tooltipPosition = 'top',
   className = '' 
 }: SwitchProps) {
   return (
-    <div className={`flex items-center justify-between ${className}`}>
-      {(label || description) && (
-        <div>
-          {label && (
-            <label className="text-sm font-medium text-gray-700">{label}</label>
-          )}
+    <div className={`space-y-2 ${className}`}>
+      {(label || description || tooltip) && (
+        <div className="space-y-2">
+          <div className="flex items-center space-x-2">
+            {label && (
+              <span className="text-sm font-medium text-gray-700">{label}</span>
+            )}
+            {tooltip && (
+              <div className="mt-1">
+                <Tooltip
+                  content={tooltip}
+                  position={tooltipPosition}
+                />
+              </div>
+            )}
+          </div>
           {description && (
-            <p className="text-xs text-gray-500 mt-1">{description}</p>
+            <p className="text-xs text-gray-500">{description}</p>
           )}
         </div>
       )}

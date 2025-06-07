@@ -4,24 +4,27 @@ export abstract class DNSProvider {
 }
 
 export class NextDNSProvider extends DNSProvider {
-  name = 'nextdns';
+  name = "nextdns";
   private endpoint: string;
+  private configId: string;
 
   constructor(configId?: string) {
     super();
-    this.endpoint = configId 
-      ? `https://${configId}.dns.nextdns.io/dns-query`
-      : 'https://dns.nextdns.io/dns-query';
+    if (!configId) {
+      throw new Error("NextDNS config ID is required");
+    }
+    this.configId = configId;
+    this.endpoint = `https://dns.nextdns.io/${configId}/BunDNSProxyno`;
   }
 
   async resolve(query: Buffer): Promise<Buffer> {
     const response = await fetch(this.endpoint, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/dns-message',
-        'Accept': 'application/dns-message'
+        "Content-Type": "application/dns-message",
+        Accept: "application/dns-message",
       },
-      body: query
+      body: query,
     });
 
     if (!response.ok) {
@@ -33,8 +36,8 @@ export class NextDNSProvider extends DNSProvider {
 }
 
 export class CloudflareProvider extends DNSProvider {
-  name = 'cloudflare';
-  private endpoint = 'https://cloudflare-dns.com/dns-query';
+  name = "cloudflare";
+  private endpoint = "https://cloudflare-dns.com/dns-query";
 
   constructor() {
     super();
@@ -42,12 +45,12 @@ export class CloudflareProvider extends DNSProvider {
 
   async resolve(query: Buffer): Promise<Buffer> {
     const response = await fetch(this.endpoint, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/dns-message',
-        'Accept': 'application/dns-message'
+        "Content-Type": "application/dns-message",
+        Accept: "application/dns-message",
       },
-      body: query
+      body: query,
     });
 
     if (!response.ok) {
@@ -59,8 +62,8 @@ export class CloudflareProvider extends DNSProvider {
 }
 
 export class GoogleProvider extends DNSProvider {
-  name = 'google';
-  private endpoint = 'https://dns.google/dns-query';
+  name = "google";
+  private endpoint = "https://dns.google/dns-query";
 
   constructor() {
     super();
@@ -68,12 +71,12 @@ export class GoogleProvider extends DNSProvider {
 
   async resolve(query: Buffer): Promise<Buffer> {
     const response = await fetch(this.endpoint, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/dns-message',
-        'Accept': 'application/dns-message'
+        "Content-Type": "application/dns-message",
+        Accept: "application/dns-message",
       },
-      body: query
+      body: query,
     });
 
     if (!response.ok) {
@@ -85,8 +88,8 @@ export class GoogleProvider extends DNSProvider {
 }
 
 export class OpenDNSProvider extends DNSProvider {
-  name = 'opendns';
-  private endpoint = 'https://doh.opendns.com/dns-query';
+  name = "opendns";
+  private endpoint = "https://doh.opendns.com/dns-query";
 
   constructor() {
     super();
@@ -94,12 +97,12 @@ export class OpenDNSProvider extends DNSProvider {
 
   async resolve(query: Buffer): Promise<Buffer> {
     const response = await fetch(this.endpoint, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/dns-message',
-        'Accept': 'application/dns-message'
+        "Content-Type": "application/dns-message",
+        Accept: "application/dns-message",
       },
-      body: query
+      body: query,
     });
 
     if (!response.ok) {

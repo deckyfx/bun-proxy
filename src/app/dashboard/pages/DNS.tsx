@@ -3,44 +3,43 @@ import {
   FloatingLabelInput,
   Card,
   Select,
-  Tooltip,
+  Switch,
 } from "@app_components/index";
 import { useState, useEffect } from "react";
 import { PageContainer } from "../components/PageContainer";
-import type { DNSStatus, DNSToggleResponse } from "@typed/dns";
+import { useDNSStore } from "@app/stores/dnsStore";
 
 export default function DNS() {
-  const [dnsStatus, setDnsStatus] = useState<DNSStatus>({
-    enabled: false,
-    server: null,
-    config: {
-      port: 53,
-      providers: [],
-      canUseLowPorts: false,
-      platform: "unknown",
-      isPrivilegedPort: true,
-      enableWhitelist: false,
-      secondaryDns: "cloudflare",
-    },
-  });
-  const [dnsLoading, setDnsLoading] = useState(false);
+  const {
+    status: dnsStatus,
+    config: dnsConfig,
+    loading: dnsLoading,
+    testLoading,
+    testResult,
+    fetchStatus,
+    fetchConfig,
+    startServer,
+    stopServer,
+    testDnsConfig,
+    updateConfig,
+  } = useDNSStore();
+
   const [customPort, setCustomPort] = useState<string>("");
   const [portError, setPortError] = useState<string>("");
+  const [nextdnsConfigId, setNextdnsConfigId] = useState<string>("");
   const [isPolling, setIsPolling] = useState(false);
 
-  const fetchDnsStatus = async () => {
-    try {
-      const response = await fetch("/api/dns/status");
-      const data: DNSStatus = await response.json();
-      setDnsStatus(data);
-      // Initialize custom port with current configured port
-      if (!customPort) {
-        setCustomPort(String(data.config.port));
-      }
-    } catch (error) {
-      console.error("Failed to fetch DNS status:", error);
+  // Initialize form values from config
+  useEffect(() => {
+    // Update port if it's different from default and form hasn't been manually changed
+    if (dnsConfig.port) {
+      setCustomPort(String(dnsConfig.port));
     }
-  };
+    // Update NextDNS config ID if available
+    if (dnsConfig.nextdnsConfigId) {
+      setNextdnsConfigId(dnsConfig.nextdnsConfigId);
+    }
+  }, [dnsConfig.port, dnsConfig.nextdnsConfigId]);
 
   const validatePort = (port: string): string => {
     const portNum = parseInt(port);
@@ -49,9 +48,9 @@ export default function DNS() {
       return "Port must be between 1 and 65535";
     }
 
-    if (portNum < 1000 && !dnsStatus.config.canUseLowPorts) {
+    if (portNum < 1000 && !dnsConfig.canUseLowPorts) {
       const privilegeMsg =
-        dnsStatus.config.platform === "win32"
+        dnsConfig.platform === "win32"
           ? "Run as Administrator to use privileged ports (< 1000)"
           : "Run with sudo to use privileged ports (< 1000)";
       return privilegeMsg;
@@ -77,43 +76,38 @@ export default function DNS() {
       }
     }
 
-    setDnsLoading(true);
     try {
-      const endpoint = dnsStatus.enabled ? "/api/dns/stop" : "/api/dns/start";
-      const body = !dnsStatus.enabled
-        ? JSON.stringify({
-            port: parseInt(customPort),
-            enableWhitelist: dnsStatus.config.enableWhitelist,
-            secondaryDns: dnsStatus.config.secondaryDns,
-          })
-        : undefined;
-
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: body ? { "Content-Type": "application/json" } : {},
-        body,
-      });
-
-      const data: DNSToggleResponse = await response.json();
-      setDnsStatus(data.status);
+      if (dnsStatus.enabled) {
+        await stopServer();
+      } else {
+        await startServer({
+          port: parseInt(customPort),
+          enableWhitelist: dnsConfig.enableWhitelist,
+          secondaryDns: dnsConfig.secondaryDns,
+          nextdnsConfigId: nextdnsConfigId || undefined,
+        });
+      }
     } catch (error) {
       console.error("Failed to toggle DNS server:", error);
       alert("Failed to toggle DNS server");
-    } finally {
-      setDnsLoading(false);
     }
+  };
+
+  const handleTestDnsConfig = async () => {
+    await testDnsConfig(nextdnsConfigId);
   };
 
   useEffect(() => {
     // Initial fetch
-    fetchDnsStatus();
-  }, []);
+    fetchStatus();
+    fetchConfig();
+  }, [fetchStatus, fetchConfig]);
 
   useEffect(() => {
     // Start/stop polling based on server status
     if (dnsStatus.enabled && !isPolling) {
       setIsPolling(true);
-      const interval = setInterval(fetchDnsStatus, 10000);
+      const interval = setInterval(fetchStatus, 10000);
       return () => {
         clearInterval(interval);
         setIsPolling(false);
@@ -121,127 +115,123 @@ export default function DNS() {
     } else if (!dnsStatus.enabled && isPolling) {
       setIsPolling(false);
     }
-  }, [dnsStatus.enabled, isPolling]);
+  }, [dnsStatus.enabled, isPolling, fetchStatus]);
 
   return (
     <PageContainer title="DNS Proxy Server">
       <div className="space-y-6">
-        {/* Server Status Card */}
-        <Card
-          title="Server Status"
-          subtitle={
-            dnsStatus.enabled
-              ? "DNS proxy is running and intercepting queries"
-              : "DNS proxy is currently stopped"
-          }
-        >
-          <div className="flex items-center justify-between">
-            <span
-              className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-                dnsStatus.enabled
-                  ? "bg-green-100 text-green-800"
-                  : "bg-red-100 text-red-800"
-              }`}
-            >
-              {dnsStatus.enabled ? "Running" : "Stopped"}
-            </span>
-            <Button
-              variant={dnsStatus.enabled ? "secondary" : "primary"}
-              size="md"
-              onClick={toggleDnsServer}
-              isLoading={dnsLoading}
-              icon={dnsStatus.enabled ? "stop" : "play_arrow"}
-            >
-              {dnsStatus.enabled ? "Stop Server" : "Start Server"}
-            </Button>
+        {/* DNS Proxy Server */}
+        <Card title="DNS Proxy Server">
+          <div className="flex items-center gap-4">
+            {/* Port Input */}
+            <div className="flex-1">
+              <FloatingLabelInput
+                label="DNS Server Port"
+                type="number"
+                value={customPort}
+                onChange={handlePortChange}
+                error={portError}
+                min="1"
+                max="65535"
+                disabled={dnsStatus.enabled}
+              />
+            </div>
+
+            {/* Start/Stop Button */}
+            <div className="flex-shrink-0">
+              <Button
+                variant={dnsStatus.enabled ? "secondary" : "primary"}
+                size="lg"
+                onClick={toggleDnsServer}
+                isLoading={dnsLoading}
+                icon={dnsStatus.enabled ? "stop" : "play_arrow"}
+                className="min-w-[140px]"
+              >
+                {dnsStatus.enabled ? "Stop Server" : "Start Server"}
+              </Button>
+            </div>
+
+            {/* Status */}
+            <div className="flex-shrink-0">
+              <div className="text-center">
+                <span
+                  className={`inline-flex items-center px-4 py-2 rounded-full text-sm font-medium ${
+                    dnsStatus.enabled
+                      ? "bg-green-100 text-green-800"
+                      : "bg-red-100 text-red-800"
+                  }`}
+                >
+                  {dnsStatus.enabled ? "Running" : "Stopped"}
+                </span>
+                {dnsStatus.enabled && dnsStatus.server && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Port: {dnsStatus.server.port}
+                  </p>
+                )}
+              </div>
+            </div>
           </div>
         </Card>
 
         {/* Configuration Card */}
         <Card title="Configuration">
-          <div className="space-y-8">
-            {/* Configuration grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {/* Port Settings */}
-              <div>
-                <div className="flex items-center space-x-2 mb-2">
-                  <label className="text-sm font-medium text-gray-700">
-                    Port
-                  </label>
-                </div>
+          <div className="space-y-6">
+            {/* NextDNS Config ID | Test Button | Result */}
+            <div className="flex items-center gap-4">
+              <div className="flex-1">
                 <FloatingLabelInput
-                  label="DNS Server Port"
-                  type="number"
-                  value={customPort}
-                  onChange={handlePortChange}
-                  error={portError}
-                  min="1"
-                  max="65535"
+                  label="NextDNS Config ID"
+                  type="text"
+                  value={nextdnsConfigId}
+                  onChange={(e) => setNextdnsConfigId(e.target.value)}
                   disabled={dnsStatus.enabled}
                 />
               </div>
-
-              {/* Whitelist Toggle */}
-              <div>
-                <div className="flex items-center space-x-2 mb-2">
-                  <label className="text-sm font-medium text-gray-700">
-                    Enable Whitelist Mode
-                  </label>
-                  <Tooltip
-                    content="Whitelist mode allows you to control which domains use NextDNS filtering. Non-whitelisted domains will be resolved using your selected secondary DNS provider, helping you manage NextDNS query limits effectively."
-                    position="right"
-                  />
-                </div>
-                <button
-                  type="button"
-                  disabled={dnsStatus.enabled}
-                  className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 ${
-                    dnsStatus.config.enableWhitelist
-                      ? "bg-blue-600"
-                      : "bg-gray-200"
-                  } ${
-                    dnsStatus.enabled ? "opacity-50 cursor-not-allowed" : ""
-                  }`}
-                  onClick={() => {
-                    if (!dnsStatus.enabled) {
-                      setDnsStatus((prev) => ({
-                        ...prev,
-                        config: {
-                          ...prev.config,
-                          enableWhitelist: !prev.config.enableWhitelist,
-                        },
-                      }));
-                    }
-                  }}
+              <div className="flex-shrink-0">
+                <Button
+                  variant="secondary"
+                  size="md"
+                  onClick={handleTestDnsConfig}
+                  isLoading={testLoading}
+                  icon="play_arrow"
+                  disabled={!nextdnsConfigId}
                 >
-                  <span
-                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                      dnsStatus.config.enableWhitelist
-                        ? "translate-x-5"
-                        : "translate-x-0"
-                    }`}
-                  />
-                </button>
+                  Test
+                </Button>
               </div>
+              <div className="flex-1">
+                {testResult && (
+                  <div className="p-3 rounded-lg bg-gray-50 text-sm">
+                    {testResult}
+                  </div>
+                )}
+              </div>
+            </div>
 
-              {/* Secondary DNS - only show when whitelist is enabled */}
-              {dnsStatus.config.enableWhitelist && (
+            {/* Enable Whitelist Mode */}
+            <div className="space-y-4">
+              <Switch
+                label="Enable Whitelist Mode"
+                checked={dnsConfig.enableWhitelist}
+                onChange={(checked) => {
+                  updateConfig({ enableWhitelist: checked });
+                }}
+                disabled={dnsStatus.enabled}
+                tooltip="Whitelist mode allows you to control which domains use NextDNS filtering. Non-whitelisted domains will be resolved using your selected secondary DNS provider, helping you manage NextDNS query limits effectively."
+                tooltipPosition="top"
+              />
+
+              {/* Secondary DNS Resolver - only show when whitelist is enabled */}
+              {dnsConfig.enableWhitelist && (
                 <div>
                   <Select
-                    label="Secondary DNS Provider"
-                    value={dnsStatus.config.secondaryDns}
+                    label="Secondary DNS Resolver"
+                    value={dnsConfig.secondaryDns}
                     onChange={(value) => {
                       if (!dnsStatus.enabled) {
-                        setDnsStatus((prev) => ({
-                          ...prev,
-                          config: {
-                            ...prev.config,
-                            secondaryDns: value as
-                              | "cloudflare"
-                              | "google"
-                              | "opendns",
-                          },
-                        }));
+                        updateConfig({
+                          secondaryDns: value as "cloudflare" | "google" | "opendns",
+                        });
                       }
                     }}
                     disabled={dnsStatus.enabled}
@@ -254,102 +244,48 @@ export default function DNS() {
                 </div>
               )}
             </div>
+          </div>
+        </Card>
 
-            {/* Port privilege warning */}
-            {customPort &&
-              parseInt(customPort) < 1000 &&
-              !dnsStatus.enabled && (
-                <div
-                  className={`mt-4 border rounded-lg p-4 ${
-                    dnsStatus.config.canUseLowPorts
-                      ? "bg-green-50 border-green-200"
-                      : "bg-yellow-50 border-yellow-200"
-                  }`}
-                >
-                  <div className="flex">
-                    <div
-                      className={`mr-3 ${
-                        dnsStatus.config.canUseLowPorts
-                          ? "text-green-600"
-                          : "text-yellow-600"
-                      }`}
-                    >
-                      {dnsStatus.config.canUseLowPorts ? "✅" : "⚠️"}
-                    </div>
-                    <div>
-                      <h3
-                        className={`text-sm font-medium ${
-                          dnsStatus.config.canUseLowPorts
-                            ? "text-green-800"
-                            : "text-yellow-800"
-                        }`}
-                      >
-                        Privileged Port {parseInt(customPort)}
-                      </h3>
-                      <p
-                        className={`text-sm mt-1 ${
-                          dnsStatus.config.canUseLowPorts
-                            ? "text-green-700"
-                            : "text-yellow-700"
-                        }`}
-                      >
-                        {dnsStatus.config.canUseLowPorts
-                          ? `Running with administrator privileges. Port ${customPort} is available.`
-                          : `Ports below 1000 require administrator privileges. ${
-                              dnsStatus.config.platform === "win32"
-                                ? "Run as Administrator"
-                                : "Run with sudo"
-                            } to use port ${customPort}.`}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-            {/* Management Buttons */}
-            <div>
-              <h3 className="text-lg font-medium text-gray-900 mb-4">
-                Management Tools
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <Button
-                  variant="secondary"
-                  size="md"
-                  icon="list"
-                  onClick={() => console.log("Manage Whitelist")}
-                  className="w-full justify-start"
-                >
-                  Manage Whitelist
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="md"
-                  icon="block"
-                  onClick={() => console.log("Manage Blacklist")}
-                  className="w-full justify-start"
-                >
-                  Manage Blacklist
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="md"
-                  icon="storage"
-                  onClick={() => console.log("Cache List")}
-                  className="w-full justify-start"
-                >
-                  Cache List
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="md"
-                  icon="description"
-                  onClick={() => console.log("Show Logs")}
-                  className="w-full justify-start"
-                >
-                  Show Logs
-                </Button>
-              </div>
-            </div>
+        {/* Management Card */}
+        <Card title="Management">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Button
+              variant="secondary"
+              size="md"
+              icon="list"
+              onClick={() => console.log("Manage Whitelist")}
+              className="w-full justify-start"
+            >
+              Whitelist
+            </Button>
+            <Button
+              variant="secondary"
+              size="md"
+              icon="block"
+              onClick={() => console.log("Manage Blacklist")}
+              className="w-full justify-start"
+            >
+              Blacklist
+            </Button>
+            <Button
+              variant="secondary"
+              size="md"
+              icon="storage"
+              onClick={() => console.log("Cache List")}
+              className="w-full justify-start"
+            >
+              Cache List
+            </Button>
+            <Button
+              variant="secondary"
+              size="md"
+              icon="description"
+              onClick={() => console.log("Show Logs")}
+              className="w-full justify-start"
+            >
+              Logs
+            </Button>
           </div>
         </Card>
 
