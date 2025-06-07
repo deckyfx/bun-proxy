@@ -1,6 +1,10 @@
 import { HashRouter, Routes, Route } from "react-router-dom";
 import { useState, useEffect } from "react";
-import Dashboard from "./Dashboard";
+import DashboardApp from "./DashboardApp";
+import Overview from "./pages/Overview";
+import Analytics from "./pages/Analytics";
+import Users from "./pages/Users";
+import Settings from "./pages/Settings";
 
 export default function Router() {
   const [isClient, setIsClient] = useState(false);
@@ -14,13 +18,19 @@ export default function Router() {
   return (
     <div>
       {!isClient ? (
-        // SSR: render SignIn by default
-        <Dashboard />
+        // SSR: render Overview by default
+        <DashboardApp />
       ) : (
         // Client: use HashRouter
         <HashRouter>
           <Routes>
-            <Route path="/" element={<Dashboard />} />
+            <Route path="/" element={<DashboardApp />}>
+              <Route index element={<Overview />} />
+              <Route path="overview" element={<Overview />} />
+              <Route path="analytics" element={<Analytics />} />
+              <Route path="users" element={<Users />} />
+              <Route path="settings" element={<Settings />} />
+            </Route>
           </Routes>
         </HashRouter>
       )}

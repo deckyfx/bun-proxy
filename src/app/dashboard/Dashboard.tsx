@@ -1,14 +1,15 @@
 import { useState } from "react";
 import type { UserType } from "@db/schema";
-import { useAuthStore } from "@app_stores//authStore";
+import { useAuthStore } from "@app_stores/authStore";
 import { Button } from "@app_components/index";
+import { DashboardLayout } from "./layout";
 
 export default function Dashboard() {
   const [healthResult, setHealthResult] = useState<any>(null);
   const [userResult, setUserResult] = useState<UserType | null>(null);
   const [loading, setLoading] = useState<{ [key: string]: boolean }>({});
 
-  const { logout, me, health, user, isLoading } = useAuthStore();
+  const { me, health, user, isLoading } = useAuthStore();
 
   const handleApiCall = async (
     apiCall: () => Promise<any>,
@@ -27,16 +28,6 @@ export default function Dashboard() {
     }
   };
 
-  const handleLogout = async () => {
-    setLoading((prev) => ({ ...prev, logout: true }));
-    try {
-      await logout();
-    } catch (error: any) {
-      console.error("Logout error:", error);
-    } finally {
-      setLoading((prev) => ({ ...prev, logout: false }));
-    }
-  };
 
   const handleMe = async () => {
     await handleApiCall(
@@ -54,8 +45,8 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="p-8 max-w-4xl mx-auto">
-      <h1 className="text-3xl font-bold mb-8">Dashboard</h1>
+    <DashboardLayout>
+      <div className="p-8 max-w-4xl mx-auto">
 
       <div className="mb-8">
         <h2 className="text-xl font-semibold mb-4">Current User</h2>
@@ -100,17 +91,6 @@ export default function Dashboard() {
           {loading.health ? "Loading..." : "Health Check (/api/health)"}
         </Button>
 
-        <Button
-          onClick={handleLogout}
-          disabled={loading.logout}
-          isLoading={loading.logout}
-          icon={!loading.logout ? "logout" : undefined}
-          variant="secondary"
-          size="lg"
-          className="bg-red-600 text-white hover:bg-red-700"
-        >
-          {loading.logout ? "Logging out..." : "Logout (/api/logout)"}
-        </Button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -130,6 +110,7 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </DashboardLayout>
   );
 }

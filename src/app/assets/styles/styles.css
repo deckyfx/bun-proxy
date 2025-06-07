@@ -7,6 +7,20 @@
   letter-spacing: 2px;
 }
 
+/* Clickable cursor utility */
+.clickable {
+  cursor: pointer;
+}
+
+/* Dialog centering and backdrop */
+dialog {
+  margin: auto;
+}
+
+dialog::backdrop {
+  background-color: rgba(0, 0, 0, 0.3);
+}
+
 /* Inter Font CSS */
 @font-face {
   font-family: "Inter";

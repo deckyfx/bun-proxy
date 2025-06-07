@@ -21,7 +21,7 @@ export function Button({
   disabled,
   ...props
 }: ButtonProps) {
-  const baseClasses = "flex items-center justify-center gap-2 rounded-md font-medium transition-colors disabled:cursor-not-allowed uppercase";
+  const baseClasses = "flex items-center justify-center gap-2 rounded-md font-medium transition-colors clickable disabled:cursor-not-allowed uppercase";
   
   const variantClasses = {
     primary: "bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-300",

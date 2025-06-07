@@ -12,4 +12,6 @@ export default {
   JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET || "123456",
 
   DATABASE_URL: process.env.DATABASE_URL || "./data/data.db",
+
+  DEBUG_ALWAYS_LOGIN: process.env.DEBUG_ALWAYS_LOGIN === "true",
 } as const;
