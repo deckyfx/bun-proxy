@@ -5,3 +5,7 @@ export { Snackbar } from './Snackbar';
 export { SnackbarContainer } from './SnackbarContainer';
 export { Dialog } from './Dialog';
 export { DialogContainer } from './DialogContainer';
+export { Card } from './Card';
+export { Switch } from './Switch';
+export { Select } from './Select';
+export { Tooltip } from './Tooltip';

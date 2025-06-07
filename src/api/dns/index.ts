@@ -32,7 +32,11 @@ function checkSudoPrivileges(): boolean {
 }
 
 // Helper function to build DNS config response
-function buildDNSConfig(currentPort?: number) {
+function buildDNSConfig(
+  currentPort?: number, 
+  enableWhitelist?: boolean, 
+  secondaryDns?: 'cloudflare' | 'google' | 'opendns'
+) {
   const canUseLowPorts = checkSudoPrivileges();
   const port = currentPort || config.DNS_PORT;
   return {
@@ -41,7 +45,9 @@ function buildDNSConfig(currentPort?: number) {
     providers: ["nextdns", "cloudflare", "google", "opendns"],
     canUseLowPorts,
     platform: process.platform,
-    isPrivilegedPort: port < 1000
+    isPrivilegedPort: port < 1000,
+    enableWhitelist: enableWhitelist ?? false,
+    secondaryDns: secondaryDns ?? 'cloudflare' as const
   };
 }
 
@@ -71,8 +77,10 @@ export async function Status(_req: any): Promise<Response> {
 export async function Start(req: any): Promise<Response> {
   try {
     let port = config.DNS_PORT;
+    let enableWhitelist = false;
+    let secondaryDns: 'cloudflare' | 'google' | 'opendns' = 'cloudflare';
     
-    // Check if request has port configuration
+    // Check if request has configuration
     try {
       const body = await req.text();
       if (body) {
@@ -80,19 +88,25 @@ export async function Start(req: any): Promise<Response> {
         if (data.port && typeof data.port === 'number') {
           port = data.port;
         }
+        if (typeof data.enableWhitelist === 'boolean') {
+          enableWhitelist = data.enableWhitelist;
+        }
+        if (data.secondaryDns && ['cloudflare', 'google', 'opendns'].includes(data.secondaryDns)) {
+          secondaryDns = data.secondaryDns;
+        }
       }
     } catch {
-      // If parsing fails, use default port
+      // If parsing fails, use default values
     }
 
-    await dnsManager.start(port);
+    await dnsManager.start(port, { enableWhitelist, secondaryDns });
     const managerStatus = dnsManager.getStatus();
 
     const response: DNSActionResponse = {
       message: "DNS server started successfully",
       status: {
         ...managerStatus,
-        config: buildDNSConfig(managerStatus.server?.port),
+        config: buildDNSConfig(managerStatus.server?.port, enableWhitelist, secondaryDns),
       },
     };
 

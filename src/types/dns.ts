@@ -27,6 +27,8 @@ export interface DNSConfig {
   canUseLowPorts: boolean;
   platform: string;
   isPrivilegedPort: boolean;
+  enableWhitelist: boolean;
+  secondaryDns: 'cloudflare' | 'google' | 'opendns';
 }
 
 export interface DNSStatus {

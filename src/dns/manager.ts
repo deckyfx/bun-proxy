@@ -6,7 +6,7 @@ class DNSManager {
   private server?: DNSProxyServer;
   private isEnabled: boolean = false;
 
-  async start(port?: number): Promise<void> {
+  async start(port?: number, options?: { enableWhitelist?: boolean; secondaryDns?: string }): Promise<void> {
     if (this.server) {
       throw new Error('DNS server is already running');
     }
