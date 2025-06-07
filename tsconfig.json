@@ -28,11 +28,13 @@
 
     "paths": {
       "@src/*": ["./src/*"],
-      "@app/*": ["./src/app/*"],
       "@db/*": ["./src/db/*"],
       "@models/*": ["./src/models/*"],
       "@utils/*": ["./src/utils/*"],
-      "@typed/*": ["./src/types/*"]
+      "@typed/*": ["./src/types/*"],
+      "@app/*": ["./src/app/*"],
+      "@app_stores/*": ["./src/app/stores/*"],
+      "@app_components/*": ["./src/app/components/*"]
     }
   }
 }

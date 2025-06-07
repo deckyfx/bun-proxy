@@ -5,13 +5,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 - **Install dependencies**: `bun install`
-- **Run development server**: `bun run index.ts`
-- **Run with hot reload**: `bun --hot index.ts`
+- **Run development server**: `bun run dev`
+- **Run with hot reload**: `bun --hot run src/index.ts`
+- **Build Tailwind CSS**: `bun run build:tailwind`
 - **Type checking**: `bun run tsc --noEmit` (using TypeScript compiler)
 
 ## Architecture
 
-This is a Bun-based SSR (Server-Side Rendering) React application that uses Bun's built-in server capabilities instead of traditional Node.js/Express setups.
+This is a Bun-based SSR (Server-Side Rendering) React application that uses Bun's built-in server capabilities with a modern UI component system.
 
 ### Key Components:
 
@@ -19,11 +20,33 @@ This is a Bun-based SSR (Server-Side Rendering) React application that uses Bun'
 - **SSR Flow**: `src/view/index.ts` handles server-side rendering using `renderToReadableStream()`
 - **Client Hydration**: `src/app/hydrate.tsx` handles client-side hydration with `hydrateRoot()`
 - **App Structure**: React components in `src/app/` with server and client entry points
+- **Component Library**: Reusable UI components in `src/app/components/`
+- **State Management**: Zustand stores in `src/app/stores/`
 - **Configuration**: Environment-based config in `src/config.ts`
 
 ### Path Aliases:
 - `@src/*` → `./src/*`
 - `@app/*` → `./src/app/*`
+- `@db/*` → `./src/db/*`
+
+## UI System
+
+### Styling
+- **Tailwind CSS v4.1.8** for utility-first styling
+- **Self-hosted Inter font** (Tailwind's recommended typeface)
+- **CSS location**: `src/app/assets/styles/`
+- **Build command**: `bun run build:tailwind`
+
+### Component Library
+- **Button**: Reusable button with variants, sizes, loading states, and icons
+- **FloatingLabelInput**: Modern input with animated floating labels and validation
+- **Icon**: Material Icons integration with size customization
+
+### Validation System
+- **Centralized validation**: `src/app/stores/validationStore.ts` using Zustand
+- **Email validation**: Real-time email format checking
+- **Password confirmation**: Cross-field validation for signup forms
+- **Error display**: Integrated with FloatingLabelInput component
 
 ## Bun-Specific Patterns
 
@@ -35,6 +58,26 @@ Always use Bun instead of Node.js tooling:
 - Bun automatically loads .env files
 
 The project uses Bun's native SSR capabilities with React streaming and automatic bundling/transpilation.
+
+## Development Patterns
+
+### Component Creation
+- Place reusable components in `src/app/components/`
+- Export from `src/app/components/index.ts`
+- Use TypeScript interfaces for props
+- Implement proper error and loading states
+
+### Form Validation
+- Use `useValidationStore()` for validation logic
+- Implement real-time validation with onChange handlers
+- Use FloatingLabelInput for consistent form styling
+- Handle error states with proper visual feedback
+
+### Styling Guidelines
+- Use Tailwind utility classes for styling
+- Avoid inline styles except for dynamic values
+- Use the Button component for all interactive buttons
+- Implement proper focus and disabled states
 
 ## Session Journaling
 

@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { useAuthStore } from "../../stores/authStore";
-import { Icon } from "../../assets";
+import { useAuthStore } from "@app_stores/authStore";
+import { useValidationStore } from "@app_stores/validationStore";
+import { Button, FloatingLabelInput } from "@app_components/index";
 
 export default function SignUp() {
   const [email, setEmail] = useState("");
@@ -8,14 +9,44 @@ export default function SignUp() {
   const [name, setName] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
+  const [emailError, setEmailError] = useState("");
+  const [confirmPasswordError, setConfirmPasswordError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
   const { signup } = useAuthStore();
+  const { validateEmail, validatePasswordMatch } = useValidationStore();
+
+  const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newEmail = e.target.value;
+    setEmail(newEmail);
+    setEmailError(validateEmail(newEmail));
+  };
+
+  const handleConfirmPasswordChange = (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const newConfirmPassword = e.target.value;
+    setConfirmPassword(newConfirmPassword);
+    setConfirmPasswordError(
+      validatePasswordMatch(password, newConfirmPassword)
+    );
+  };
+
+  const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newPassword = e.target.value;
+    setPassword(newPassword);
+    // Re-validate confirm password if it has a value
+    if (confirmPassword) {
+      setConfirmPasswordError(
+        validatePasswordMatch(newPassword, confirmPassword)
+      );
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    
+
     if (password !== confirmPassword) {
       setError("Passwords don't match");
       return;
@@ -25,13 +56,13 @@ export default function SignUp() {
 
     try {
       await signup({ email, password, name });
-      
+
       // Show success alert
       alert("Account created successfully! Redirecting to sign in...");
-      
+
       // Redirect to sign in route
       window.location.hash = "#/signin";
-      
+
       // Reset form
       setEmail("");
       setPassword("");
@@ -45,103 +76,63 @@ export default function SignUp() {
   };
 
   return (
-    <div className="auth-container">
-      <h1>Sign Up</h1>
-      <form onSubmit={handleSubmit}>
+    <div className="w-1/3 min-w-96 mx-auto p-8 bg-white rounded-lg shadow-md border">
+      <h1 className="text-2xl font-bold text-center mb-6">Sign Up</h1>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         {error && (
-          <div style={{ color: 'red', marginBottom: '1rem' }}>
+          <div className="p-3 bg-red-50 text-red-800 rounded-md text-sm">
             {error}
           </div>
         )}
-        <div>
-          <label htmlFor="name">Name:</label>
-          <input
-            type="text"
-            id="name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            disabled={isLoading}
-            required
-          />
-        </div>
-        <div>
-          <label htmlFor="email">Email:</label>
-          <input
-            type="email"
-            id="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            disabled={isLoading}
-            required
-          />
-        </div>
-        <div>
-          <label htmlFor="password">Password:</label>
-          <input
-            type="password"
-            id="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            disabled={isLoading}
-            required
-          />
-        </div>
-        <div>
-          <label htmlFor="confirmPassword">Confirm Password:</label>
-          <input
-            type="password"
-            id="confirmPassword"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            disabled={isLoading}
-            required
-          />
-        </div>
-        <button 
-          type="submit" 
+        <FloatingLabelInput
+          type="text"
+          label="Full Name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
           disabled={isLoading}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '8px'
-          }}
+          required
+        />
+        <FloatingLabelInput
+          type="email"
+          label="Email Address"
+          value={email}
+          onChange={handleEmailChange}
+          disabled={isLoading}
+          required
+          error={emailError}
+        />
+        <FloatingLabelInput
+          type="password"
+          label="Password"
+          value={password}
+          onChange={handlePasswordChange}
+          disabled={isLoading}
+          required
+        />
+        <FloatingLabelInput
+          type="password"
+          label="Confirm Password"
+          value={confirmPassword}
+          onChange={handleConfirmPasswordChange}
+          disabled={isLoading}
+          required
+          error={confirmPasswordError}
+        />
+        <Button
+          type="submit"
+          isLoading={isLoading}
+          icon={!isLoading ? "person_add" : undefined}
+          className="w-full"
         >
-          {isLoading ? (
-            <div style={{
-              width: '16px',
-              height: '16px',
-              border: '2px solid #ffffff',
-              borderTop: '2px solid transparent',
-              borderRadius: '50%',
-              animation: 'spin 1s linear infinite'
-            }} />
-          ) : (
-            <Icon name="person_add" size={20} />
-          )}
-          {isLoading ? 'Signing Up...' : 'Sign Up'}
-        </button>
+          {isLoading ? "Signing Up..." : "Sign Up"}
+        </Button>
       </form>
-      <p>
-        Already have an account? <a href="#/signin">Sign In</a>
+      <p className="text-center text-sm text-gray-600 mt-4">
+        Already have an account?{" "}
+        <a href="#/signin" className="text-blue-600 hover:underline">
+          Sign In
+        </a>
       </p>
-      
-      <style>{`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-        
-        .auth-container input:disabled {
-          background-color: #f5f5f5;
-          cursor: not-allowed;
-        }
-        
-        .auth-container button:disabled {
-          background: #ccc;
-          cursor: not-allowed;
-        }
-      `}</style>
     </div>
   );
 }

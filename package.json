@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "bun --hot run src/index.ts",
+    "build:tailwind": "bunx @tailwindcss/cli -i ./src/app/assets/styles/styles.css -o ./src/app/assets/styles/tailwind.css",
     "drizzle": "bunx drizzle-kit generate --dialect sqlite --schema ./src/db/schema/index.ts --out ./src/db/drizzle",
     "migrate": "bun run src/db/migrations/index.ts",
     "seed": "bun run src/db/seeds/index.ts",
@@ -20,11 +21,13 @@
     "zustand": "^5.0.5"
   },
   "devDependencies": {
+    "@tailwindcss/cli": "^4.1.8",
     "@types/bun": "latest",
+    "@types/jsonwebtoken": "^9.0.9",
     "@types/react": "^19.1.6",
     "@types/react-dom": "^19.1.6",
-    "@types/jsonwebtoken": "^9.0.9",
-    "drizzle-kit": "^0.31.1"
+    "drizzle-kit": "^0.31.1",
+    "tailwindcss": "^4.1.8"
   },
   "peerDependencies": {
     "typescript": "^5"

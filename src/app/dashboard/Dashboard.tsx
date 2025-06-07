@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { useAuthStore } from "../stores/authStore";
 import type { UserType } from "@db/schema";
-import { Icon } from "../assets";
+import { useAuthStore } from "@app_stores//authStore";
+import { Button } from "@app_components/index";
 
 export default function Dashboard() {
   const [healthResult, setHealthResult] = useState<any>(null);
@@ -15,7 +15,7 @@ export default function Dashboard() {
     resultSetter: (result: any) => void,
     key: string
   ) => {
-    setLoading(prev => ({ ...prev, [key]: true }));
+    setLoading((prev) => ({ ...prev, [key]: true }));
     try {
       const result = await apiCall();
       resultSetter(result);
@@ -23,18 +23,18 @@ export default function Dashboard() {
       console.error(`${key} error:`, error);
       alert(`${key} failed: ${error.message}`);
     } finally {
-      setLoading(prev => ({ ...prev, [key]: false }));
+      setLoading((prev) => ({ ...prev, [key]: false }));
     }
   };
 
   const handleLogout = async () => {
-    setLoading(prev => ({ ...prev, logout: true }));
+    setLoading((prev) => ({ ...prev, logout: true }));
     try {
       await logout();
     } catch (error: any) {
-      console.error('Logout error:', error);
+      console.error("Logout error:", error);
     } finally {
-      setLoading(prev => ({ ...prev, logout: false }));
+      setLoading((prev) => ({ ...prev, logout: false }));
     }
   };
 
@@ -45,165 +45,91 @@ export default function Dashboard() {
         return user;
       },
       setUserResult,
-      'me'
+      "me"
     );
   };
 
   const handleHealth = async () => {
-    await handleApiCall(health, setHealthResult, 'health');
+    await handleApiCall(health, setHealthResult, "health");
   };
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '800px', margin: '0 auto' }}>
-      <h1>Dashboard</h1>
-      
-      <div style={{ marginBottom: '2rem' }}>
-        <h2>Current User</h2>
+    <div className="p-8 max-w-4xl mx-auto">
+      <h1 className="text-3xl font-bold mb-8">Dashboard</h1>
+
+      <div className="mb-8">
+        <h2 className="text-xl font-semibold mb-4">Current User</h2>
         {user ? (
-          <div style={{ background: '#f5f5f5', padding: '1rem', borderRadius: '4px' }}>
-            <p><strong>Email:</strong> {user.email}</p>
-            <p><strong>Name:</strong> {user.name}</p>
-            <p><strong>ID:</strong> {user.id}</p>
+          <div className="bg-gray-100 p-4 rounded-lg">
+            <p className="mb-2">
+              <strong>Email:</strong> {user.email}
+            </p>
+            <p className="mb-2">
+              <strong>Name:</strong> {user.name}
+            </p>
+            <p>
+              <strong>ID:</strong> {user.id}
+            </p>
           </div>
         ) : (
-          <p>No user data available</p>
+          <p className="text-gray-600">No user data available</p>
         )}
       </div>
 
-      <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginBottom: '2rem' }}>
-        <button
+      <div className="flex gap-4 flex-wrap mb-8">
+        <Button
           onClick={handleMe}
           disabled={loading.me || isLoading}
-          style={{
-            padding: '0.75rem 1.5rem',
-            backgroundColor: '#007bff',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            fontSize: '1rem',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px'
-          }}
+          isLoading={loading.me}
+          icon={!loading.me ? "person" : undefined}
+          variant="primary"
+          size="lg"
         >
-          {loading.me ? (
-            <div style={{
-              width: '16px',
-              height: '16px',
-              border: '2px solid #ffffff',
-              borderTop: '2px solid transparent',
-              borderRadius: '50%',
-              animation: 'spin 1s linear infinite'
-            }} />
-          ) : (
-            <Icon name="person" size={20} />
-          )}
-          {loading.me ? 'Loading...' : 'Get User Info (/api/me)'}
-        </button>
+          {loading.me ? "Loading..." : "Get User Info (/api/me)"}
+        </Button>
 
-        <button
+        <Button
           onClick={handleHealth}
           disabled={loading.health}
-          style={{
-            padding: '0.75rem 1.5rem',
-            backgroundColor: '#28a745',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            fontSize: '1rem',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px'
-          }}
+          isLoading={loading.health}
+          icon={!loading.health ? "health_and_safety" : undefined}
+          variant="secondary"
+          size="lg"
+          className="bg-green-600 text-white hover:bg-green-700"
         >
-          {loading.health ? (
-            <div style={{
-              width: '16px',
-              height: '16px',
-              border: '2px solid #ffffff',
-              borderTop: '2px solid transparent',
-              borderRadius: '50%',
-              animation: 'spin 1s linear infinite'
-            }} />
-          ) : (
-            <Icon name="health_and_safety" size={20} />
-          )}
-          {loading.health ? 'Loading...' : 'Health Check (/api/health)'}
-        </button>
+          {loading.health ? "Loading..." : "Health Check (/api/health)"}
+        </Button>
 
-        <button
+        <Button
           onClick={handleLogout}
           disabled={loading.logout}
-          style={{
-            padding: '0.75rem 1.5rem',
-            backgroundColor: loading.logout ? '#aaa' : '#dc3545',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: loading.logout ? 'not-allowed' : 'pointer',
-            fontSize: '1rem',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '8px'
-          }}
+          isLoading={loading.logout}
+          icon={!loading.logout ? "logout" : undefined}
+          variant="secondary"
+          size="lg"
+          className="bg-red-600 text-white hover:bg-red-700"
         >
-          {loading.logout ? (
-            <div style={{
-              width: '16px',
-              height: '16px',
-              border: '2px solid #ffffff',
-              borderTop: '2px solid transparent',
-              borderRadius: '50%',
-              animation: 'spin 1s linear infinite'
-            }} />
-          ) : (
-            <Icon name="logout" size={20} />
-          )}
-          {loading.logout ? 'Logging out...' : 'Logout (/api/logout)'}
-        </button>
+          {loading.logout ? "Logging out..." : "Logout (/api/logout)"}
+        </Button>
       </div>
 
-      <div style={{ display: 'grid', gap: '1rem', gridTemplateColumns: '1fr 1fr' }}>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <h3>Me API Result</h3>
-          <div style={{ 
-            background: '#f8f9fa', 
-            padding: '1rem', 
-            borderRadius: '4px',
-            minHeight: '100px',
-            fontFamily: 'monospace',
-            whiteSpace: 'pre-wrap',
-            overflow: 'auto'
-          }}>
-            {userResult ? JSON.stringify(userResult, null, 2) : 'No data yet'}
+          <h3 className="text-lg font-semibold mb-3">Me API Result</h3>
+          <div className="bg-gray-50 p-4 rounded-lg min-h-24 font-mono text-sm whitespace-pre-wrap overflow-auto">
+            {userResult ? JSON.stringify(userResult, null, 2) : "No data yet"}
           </div>
         </div>
 
         <div>
-          <h3>Health API Result</h3>
-          <div style={{ 
-            background: '#f8f9fa', 
-            padding: '1rem', 
-            borderRadius: '4px',
-            minHeight: '100px',
-            fontFamily: 'monospace',
-            whiteSpace: 'pre-wrap',
-            overflow: 'auto'
-          }}>
-            {healthResult ? JSON.stringify(healthResult, null, 2) : 'No data yet'}
+          <h3 className="text-lg font-semibold mb-3">Health API Result</h3>
+          <div className="bg-gray-50 p-4 rounded-lg min-h-24 font-mono text-sm whitespace-pre-wrap overflow-auto">
+            {healthResult
+              ? JSON.stringify(healthResult, null, 2)
+              : "No data yet"}
           </div>
         </div>
       </div>
-      
-      <style>{`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-      `}</style>
     </div>
   );
 }
