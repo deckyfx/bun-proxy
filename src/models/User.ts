@@ -1,14 +1,18 @@
-import { db } from "@db/index";
-import { user as userTable, type UserType } from "@db/schema";
 import { eq } from "drizzle-orm";
 
-export class User {
+import { db } from "@db/index";
+import { user as userTable, type UserType } from "@db/schema";
+
+import type { ErrorableResult } from "@typed/index";
+
+export class User implements UserType {
   private _data: UserType;
 
   // Declare keys for type hints
   readonly id!: number;
-  readonly username!: string;
+  readonly email!: string;
   readonly password!: string;
+  readonly name!: string;
   readonly last_login!: string | null;
 
   constructor(record: UserType) {
@@ -27,37 +31,21 @@ export class User {
     return rest;
   }
 
-  static async register(
-    username: string,
+  static async signin(
+    email: string,
     password: string
-  ): Promise<User | null> {
-    const inserted = await db
-      .insert(userTable)
-      .values({
-        username,
-        password,
-      })
-      .returning();
-
-    if (inserted.length > 0) {
-      return new User(inserted[0]!);
-    }
-
-    return null;
-  }
-
-  static async login(username: string, password: string): Promise<User | null> {
-    const result = await db
+  ): Promise<ErrorableResult<User>> {
+    const records = await db
       .select()
       .from(userTable)
-      .where(eq(userTable.username, username))
+      .where(eq(userTable.email, email))
       .limit(1);
 
-    const record = result[0];
-    if (!record) return null;
+    if (records.length <= 0) return [null, new Error("No user found")];
+    const record = records[0]!;
 
     const valid = password === record.password;
-    if (!valid) return null;
+    if (!valid) return [null, new Error("Invalid credentials")];
 
     // Update last_login
     const updated = await db
@@ -67,10 +55,36 @@ export class User {
       .returning();
 
     if (updated.length > 0) {
-      return new User(updated[0]!);
+      return [new User(updated[0]!), null];
     }
 
-    return null;
+    return [null, new Error("General error")];
+  }
+
+  static async signup(
+    email: string,
+    password: string,
+    name: string
+  ): Promise<ErrorableResult<User>> {
+    const records = await db
+      .select()
+      .from(userTable)
+      .where(eq(userTable.email, email))
+      .limit(1);
+
+    if (records.length > 0) return [null, new Error("Email already used")];
+
+    // Update last_login
+    const inserted = await db
+      .insert(userTable)
+      .values([{ email, password, name }])
+      .returning();
+
+    if (inserted.length > 0) {
+      return [new User(inserted[0]!), null];
+    }
+
+    return [null, new Error("General Error")];
   }
 
   static async logout(): Promise<void> {

@@ -1,9 +1,9 @@
 {
   "compilerOptions": {
     // Environment setup & latest features
-    "lib": ["ESNext", "dom"],
+    "lib": ["ESNext", "DOM"],
     "target": "ESNext",
-    "module": "ESNext",
+    "module": "Preserve",
     "moduleDetection": "force",
     "jsx": "react-jsx",
     "allowJs": true,
@@ -19,6 +19,7 @@
     "skipLibCheck": true,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
 
     // Some stricter flags (disabled by default)
     "noUnusedLocals": false,
@@ -27,10 +28,11 @@
 
     "paths": {
       "@src/*": ["./src/*"],
-      "@app/*": ["./src/dashboard/app/*"],
+      "@app/*": ["./src/app/*"],
       "@db/*": ["./src/db/*"],
       "@models/*": ["./src/models/*"],
-      "@backend/*": ["./src/servers/dashboard/*"]
+      "@utils/*": ["./src/utils/*"],
+      "@typed/*": ["./src/types/*"]
     }
   }
 }
