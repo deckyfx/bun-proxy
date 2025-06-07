@@ -1,5 +1,6 @@
-import { Button, FloatingLabelInput } from "@app/components";
-import { useState } from "react";
+import { Button, FloatingLabelInput } from "@app_components/index";
+import { useState, useEffect } from "react";
+import { PageContainer } from "../components/PageContainer";
 
 export default function Settings() {
   const [settings, setSettings] = useState({
@@ -10,6 +11,12 @@ export default function Settings() {
     apiRateLimit: "1000"
   });
 
+  const [dnsStatus, setDnsStatus] = useState({
+    enabled: false,
+    server: null as any
+  });
+  const [dnsLoading, setDnsLoading] = useState(false);
+
   const handleInputChange = (field: string, value: string | boolean) => {
     setSettings(prev => ({ ...prev, [field]: value }));
   };
@@ -19,9 +26,36 @@ export default function Settings() {
     alert("Settings saved successfully!");
   };
 
+  const fetchDnsStatus = async () => {
+    try {
+      const response = await fetch('/api/dns/status');
+      const data = await response.json();
+      setDnsStatus(data);
+    } catch (error) {
+      console.error('Failed to fetch DNS status:', error);
+    }
+  };
+
+  const toggleDnsServer = async () => {
+    setDnsLoading(true);
+    try {
+      const response = await fetch('/api/dns/toggle', { method: 'POST' });
+      const data = await response.json();
+      setDnsStatus(data.status);
+    } catch (error) {
+      console.error('Failed to toggle DNS server:', error);
+      alert('Failed to toggle DNS server');
+    } finally {
+      setDnsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDnsStatus();
+  }, []);
+
   return (
-    <div className="p-8 max-w-4xl mx-auto">
-      <h1 className="text-3xl font-bold mb-8">Settings</h1>
+    <PageContainer title="Settings">
       
       <div className="space-y-6">
         <div className="bg-white p-6 rounded-lg shadow-sm border">
@@ -84,6 +118,71 @@ export default function Settings() {
           </div>
         </div>
         
+        <div className="bg-white p-6 rounded-lg shadow-sm border">
+          <h2 className="text-xl font-semibold mb-4">DNS Proxy Server</h2>
+          
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-700">DNS Proxy Status</p>
+                <p className="text-xs text-gray-500">
+                  {dnsStatus.enabled ? 'Server is running and intercepting DNS queries' : 'Server is stopped'}
+                </p>
+              </div>
+              <div className="flex items-center space-x-3">
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                  dnsStatus.enabled 
+                    ? 'bg-green-100 text-green-800' 
+                    : 'bg-red-100 text-red-800'
+                }`}>
+                  {dnsStatus.enabled ? 'Running' : 'Stopped'}
+                </span>
+                <Button 
+                  variant={dnsStatus.enabled ? "secondary" : "primary"}
+                  size="sm"
+                  onClick={toggleDnsServer}
+                  isLoading={dnsLoading}
+                  icon={dnsStatus.enabled ? "stop" : "play_arrow"}
+                >
+                  {dnsStatus.enabled ? 'Stop' : 'Start'}
+                </Button>
+              </div>
+            </div>
+
+            {dnsStatus.server && (
+              <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                <h3 className="text-sm font-medium text-gray-700 mb-2">Server Statistics</h3>
+                <div className="grid grid-cols-2 gap-4 text-xs">
+                  <div>
+                    <span className="text-gray-500">Port:</span>
+                    <span className="ml-2 font-mono">{dnsStatus.server.port}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Providers:</span>
+                    <span className="ml-2">{dnsStatus.server.providers?.join(', ')}</span>
+                  </div>
+                  {dnsStatus.server.stats && (
+                    <>
+                      <div>
+                        <span className="text-gray-500">Total Queries:</span>
+                        <span className="ml-2 font-mono">{dnsStatus.server.stats.totalQueries}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">Cache Size:</span>
+                        <span className="ml-2 font-mono">{dnsStatus.server.stats.cacheSize}</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="text-xs text-gray-500">
+              <p>The DNS proxy server intercepts DNS queries and routes them to NextDNS and Cloudflare to minimize NextDNS usage while maintaining performance.</p>
+            </div>
+          </div>
+        </div>
+        
         <div className="flex justify-end space-x-4">
           <Button variant="secondary" size="md">
             Reset
@@ -93,6 +192,6 @@ export default function Settings() {
           </Button>
         </div>
       </div>
-    </div>
+    </PageContainer>
   );
 }

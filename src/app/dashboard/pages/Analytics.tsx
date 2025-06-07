@@ -1,7 +1,8 @@
+import { PageContainer } from "../components/PageContainer";
+
 export default function Analytics() {
   return (
-    <div className="p-8 max-w-4xl mx-auto">
-      <h1 className="text-3xl font-bold mb-8">Analytics</h1>
+    <PageContainer title="Analytics">
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
         <div className="bg-white p-6 rounded-lg shadow-sm border">
@@ -30,6 +31,6 @@ export default function Analytics() {
           graphs, and detailed metrics about system usage and performance.
         </p>
       </div>
-    </div>
+    </PageContainer>
   );
 }

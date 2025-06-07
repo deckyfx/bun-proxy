@@ -1,5 +1,4 @@
-import React from "react";
-import { useDialogStore } from "@app/stores/dialogStore";
+import { useDialogStore } from "@app_stores/dialogStore";
 import { Dialog } from "./Dialog";
 
 export function DialogContainer() {

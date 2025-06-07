@@ -1,4 +1,5 @@
-import { Button } from "@app/components";
+import { Button } from "@app_components/index";
+import { PageContainer } from "../components/PageContainer";
 
 export default function Users() {
   const mockUsers = [
@@ -9,13 +10,15 @@ export default function Users() {
   ];
 
   return (
-    <div className="p-8 max-w-6xl mx-auto">
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold">Users</h1>
+    <PageContainer 
+      title="Users" 
+      maxWidth="6xl"
+      actions={
         <Button variant="primary" icon="add" size="md">
           Add User
         </Button>
-      </div>
+      }
+    >
       
       <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200">
@@ -78,6 +81,6 @@ export default function Users() {
           </table>
         </div>
       </div>
-    </div>
+    </PageContainer>
   );
 }

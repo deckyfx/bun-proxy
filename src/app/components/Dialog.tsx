@@ -1,7 +1,7 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Icon, Button, FloatingLabelInput } from "./index";
-import { useDialogStore, type Dialog } from "@app/stores/dialogStore";
+import { useDialogStore, type Dialog } from "@app_stores/dialogStore";
 
 interface DialogProps {
   dialog: Dialog;

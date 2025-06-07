@@ -2,7 +2,7 @@ import { renderToReadableStream } from "react-dom/server";
 import React from "react";
 
 import Index from "@app/index";
-import { getAccessTokenFromRequest, verifyAccessToken } from "@src/utils/auth";
+import { getAccessTokenFromRequest, verifyAccessToken } from "@utils/auth";
 import { type UserType } from "@db/schema";
 import Config from "@src/config";
 

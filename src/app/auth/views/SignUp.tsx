@@ -55,7 +55,7 @@ export default function SignUp() {
     setIsLoading(true);
 
     try {
-      await signup({ email, password, name });
+      await signup({ email, password, name, confirmPassword });
 
       // Show success alert
       alert("Account created successfully! Redirecting to sign in...");

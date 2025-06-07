@@ -1,7 +1,13 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { jwtDecode } from 'jwt-decode';
-import type { UserType } from '@db/schema';
+import type { 
+  AuthResponse, 
+  LoginRequest, 
+  SignupRequest, 
+  UserProfile, 
+  HealthResponse 
+} from '@src/types';
 
 interface AuthTokens {
   accessToken: string;
@@ -10,7 +16,7 @@ interface AuthTokens {
 
 interface AuthState {
   tokens: AuthTokens | null;
-  user: UserType | null;
+  user: UserProfile | null;
   isLoading: boolean;
   
   // Actions
@@ -18,11 +24,11 @@ interface AuthState {
   clearTokens: () => void;
   
   // API methods
-  signin: (payload: Pick<UserType, "email" | "password">) => Promise<boolean>;
-  signup: (payload: Pick<UserType, "email" | "password" | "name">) => Promise<boolean>;
+  signin: (payload: LoginRequest) => Promise<boolean>;
+  signup: (payload: SignupRequest) => Promise<boolean>;
   logout: () => Promise<void>;
   me: () => Promise<void>;
-  health: () => Promise<{ status: string }>;
+  health: () => Promise<HealthResponse>;
   
   // Helper methods
   getCookie: (name: string) => string | null;
@@ -61,7 +67,7 @@ export const useAuthStore = create<AuthState>()(
           headers: { Authorization: `Bearer ${tokens?.refreshToken}` },
         });
         if (!res.ok) throw new Error("Failed to refresh");
-        const data = await res.json();
+        const data: AuthResponse = await res.json();
         setTokens(data);
         return data.accessToken;
       },
@@ -98,7 +104,7 @@ export const useAuthStore = create<AuthState>()(
           }
           const res = await fetch("/api/user/me", { method: "POST" });
           if (!res.ok) throw new Error(await res.text());
-          const user = await res.json();
+          const user: UserProfile = await res.json();
           set({ user });
         } catch (err: any) {
           clearTokens();
@@ -108,7 +114,7 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      signin: async (payload: Pick<UserType, "email" | "password">): Promise<boolean> => {
+      signin: async (payload: LoginRequest): Promise<boolean> => {
         try {
           set({ isLoading: true });
           const res = await fetch("/api/auth/signin", {
@@ -117,7 +123,7 @@ export const useAuthStore = create<AuthState>()(
             body: JSON.stringify(payload),
           });
           if (!res.ok) throw new Error(await res.text());
-          const tokens = await res.json();
+          const tokens: AuthResponse = await res.json();
           get().setTokens(tokens);
           window.location.reload();
           return true;
@@ -128,7 +134,7 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      signup: async (payload: Pick<UserType, "email" | "password" | "name">): Promise<boolean> => {
+      signup: async (payload: SignupRequest): Promise<boolean> => {
         try {
           set({ isLoading: true });
           const res = await fetch("/api/auth/signup", {
@@ -154,7 +160,7 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      health: async (): Promise<{ status: string }> => {
+      health: async (): Promise<HealthResponse> => {
         const res = await fetch("/api/system/health");
         if (!res.ok) throw new Error("Health check failed");
         return res.json();

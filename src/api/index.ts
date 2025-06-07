@@ -1,6 +1,7 @@
 import { Signin, Signup, Logout, Refresh } from "./auth";
 import { Me } from "./user";
 import { Health } from "./system";
+import { Status, Start, Stop, Toggle } from "./dns";
 
 type RouteHandler = (req: any) => Promise<Response>;
 type RouteConfig = { [K in 'GET' | 'POST' | 'PUT' | 'DELETE']?: RouteHandler };
@@ -17,6 +18,12 @@ const scopedRoutes: Record<string, Record<string, RouteConfig>> = {
   },
   system: {
     health: { GET: Health },
+  },
+  dns: {
+    status: { GET: Status },
+    start: { POST: Start },
+    stop: { POST: Stop },
+    toggle: { POST: Toggle },
   },
 };
 

@@ -1,14 +1,5 @@
 import { create } from "zustand";
-
-export type SnackbarType = "info" | "debug" | "warning" | "alert";
-
-export interface Snackbar {
-  id: string;
-  type: SnackbarType;
-  title?: string;
-  message: string;
-  duration?: number;
-}
+import type { Snackbar } from "@src/types/ui";
 
 interface SnackbarStore {
   snackbars: Snackbar[];
@@ -25,7 +16,7 @@ export const useSnackbarStore = create<SnackbarStore>((set, get) => ({
   snackbars: [],
   
   addSnackbar: (snackbar) => {
-    const id = `snackbar_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const id = `snackbar_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
     const newSnackbar: Snackbar = {
       ...snackbar,
       id,

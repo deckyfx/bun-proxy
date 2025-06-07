@@ -1,5 +1,4 @@
-import React from "react";
-import { useSnackbarStore } from "@app/stores/snackbarStore";
+import { useSnackbarStore } from "@app_stores/snackbarStore";
 import { Snackbar } from "./Snackbar";
 
 export function SnackbarContainer() {

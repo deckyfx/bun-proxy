@@ -1,50 +1,9 @@
 import { create } from "zustand";
 import type { ReactNode } from "react";
+import type { Dialog, AlertDialog, ConfirmDialog, PromptDialog, CustomDialog } from "@src/types/ui";
 
-export type DialogType = "alert" | "confirm" | "prompt" | "custom";
-
-export interface BaseDialog {
-  id: string;
-  type: DialogType;
-  title?: string;
-  isOpen: boolean;
-}
-
-export interface AlertDialog extends BaseDialog {
-  type: "alert";
-  message: string;
-  confirmText?: string;
-  onConfirm?: () => void;
-}
-
-export interface ConfirmDialog extends BaseDialog {
-  type: "confirm";
-  message: string;
-  confirmText?: string;
-  cancelText?: string;
-  onConfirm?: () => void;
-  onCancel?: () => void;
-}
-
-export interface PromptDialog extends BaseDialog {
-  type: "prompt";
-  message: string;
-  placeholder?: string;
-  defaultValue?: string;
-  confirmText?: string;
-  cancelText?: string;
-  onConfirm?: (value: string) => void;
-  onCancel?: () => void;
-}
-
-export interface CustomDialog extends BaseDialog {
-  type: "custom";
-  content: ReactNode;
-  showCloseButton?: boolean;
-  onClose?: () => void;
-}
-
-export type Dialog = AlertDialog | ConfirmDialog | PromptDialog | CustomDialog;
+// Re-export Dialog type for components
+export type { Dialog } from "@src/types/ui";
 
 interface DialogStore {
   dialogs: Dialog[];
@@ -96,7 +55,7 @@ export const useDialogStore = create<DialogStore>((set, get) => ({
   dialogs: [],
   
   openDialog: (dialog) => {
-    const id = `dialog_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const id = `dialog_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
     const newDialog: Dialog = {
       ...dialog,
       id,
@@ -122,7 +81,7 @@ export const useDialogStore = create<DialogStore>((set, get) => ({
   
   showAlert: (message, options = {}) => {
     return new Promise<void>((resolve) => {
-      get().openDialog({
+      const alertDialog: Omit<AlertDialog, "id" | "isOpen"> = {
         type: "alert",
         title: options.title || "Alert",
         message,
@@ -131,13 +90,14 @@ export const useDialogStore = create<DialogStore>((set, get) => ({
           options.onConfirm?.();
           resolve();
         },
-      });
+      };
+      get().openDialog(alertDialog);
     });
   },
   
   showConfirm: (message, options = {}) => {
     return new Promise<boolean>((resolve) => {
-      get().openDialog({
+      const confirmDialog: Omit<ConfirmDialog, "id" | "isOpen"> = {
         type: "confirm",
         title: options.title || "Confirm",
         message,
@@ -145,13 +105,14 @@ export const useDialogStore = create<DialogStore>((set, get) => ({
         cancelText: options.cancelText || "No",
         onConfirm: () => resolve(true),
         onCancel: () => resolve(false),
-      });
+      };
+      get().openDialog(confirmDialog);
     });
   },
   
   showPrompt: (message, options = {}) => {
     return new Promise<string | null>((resolve) => {
-      get().openDialog({
+      const promptDialog: Omit<PromptDialog, "id" | "isOpen"> = {
         type: "prompt",
         title: options.title || "Input",
         message,
@@ -159,19 +120,21 @@ export const useDialogStore = create<DialogStore>((set, get) => ({
         defaultValue: options.defaultValue,
         confirmText: options.confirmText || "OK",
         cancelText: options.cancelText || "Cancel",
-        onConfirm: (value) => resolve(value),
+        onConfirm: (value: string) => resolve(value),
         onCancel: () => resolve(null),
-      });
+      };
+      get().openDialog(promptDialog);
     });
   },
   
   showCustom: (content, options = {}) => {
-    return get().openDialog({
+    const customDialog: Omit<CustomDialog, "id" | "isOpen"> = {
       type: "custom",
       title: options.title,
       content,
       showCloseButton: options.showCloseButton ?? true,
       onClose: options.onClose,
-    });
+    };
+    return get().openDialog(customDialog);
   },
 }));

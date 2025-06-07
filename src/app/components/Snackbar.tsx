@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Icon } from "./Icon";
 
-import type { SnackbarType } from "@app/stores/snackbarStore";
+import type { SnackbarType } from "@src/types/ui";
 
 export interface SnackbarProps {
   id: string;

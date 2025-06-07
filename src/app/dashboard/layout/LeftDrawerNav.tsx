@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Icon, Button } from "@app/components";
-import { useAuthStore } from "@app/stores/authStore";
+import { Icon, Button } from "@app_components/index";
+import { useAuthStore } from "@app_stores/authStore";
 
 interface NavItem {
   id: string;
@@ -12,8 +12,10 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { id: "overview", label: "Overview", icon: "dashboard", path: "/overview" },
+  { id: "debug", label: "Debug", icon: "bug_report", path: "/debug" },
   { id: "analytics", label: "Analytics", icon: "analytics", path: "/analytics" },
   { id: "users", label: "Users", icon: "people", path: "/users" },
+  { id: "dns", label: "DNS", icon: "dns", path: "/dns" },
   { id: "settings", label: "Settings", icon: "settings", path: "/settings" },
 ];
 
