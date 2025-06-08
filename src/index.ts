@@ -30,6 +30,7 @@ process.on("SIGTERM", async () => {
 
 export default Bun.serve({
   port: Config.DASHBOARD_PORT,
+  idleTimeout: 0, // Disable timeout for SSE connections
   // development can also be an object.
   development: {
     // Enable Hot Module Reloading

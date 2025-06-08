@@ -1,22 +1,19 @@
 import { Button, Card, Select } from "@app_components/index";
 import { useState, useEffect } from "react";
 import { useDriverStore } from "@app/stores/driverStore";
-import { useDNSStore } from "@app/stores/dnsStore";
 import { DRIVER_TYPES } from "@src/types/driver";
 
 export default function DNSDriver() {
-  const { status: dnsStatus } = useDNSStore();
   const {
     drivers,
     loading: driversLoading,
     error: driversError,
     fetchDrivers,
     setDriver,
-    getDriverContent,
     clearError
   } = useDriverStore();
 
-  const [isPolling, setIsPolling] = useState(false);
+  // Note: Polling removed - now using SSE for real-time updates
 
   // Driver form states
   const [driverForms, setDriverForms] = useState({
@@ -28,7 +25,7 @@ export default function DNSDriver() {
 
   useEffect(() => {
     fetchDrivers();
-  }, [fetchDrivers]);
+  }, []); // Empty dependency array - run only once on mount
 
   // Update driver forms when drivers data is loaded
   useEffect(() => {
@@ -50,26 +47,7 @@ export default function DNSDriver() {
     }
   }, [drivers]);
 
-  // Polling for driver content when server is running
-  useEffect(() => {
-    if (dnsStatus.enabled && !isPolling) {
-      setIsPolling(true);
-      const interval = setInterval(() => {
-        if (drivers?.current) {
-          getDriverContent(DRIVER_TYPES.LOGS);
-          getDriverContent(DRIVER_TYPES.CACHE);
-          getDriverContent(DRIVER_TYPES.BLACKLIST);
-          getDriverContent(DRIVER_TYPES.WHITELIST);
-        }
-      }, 10000);
-      return () => {
-        clearInterval(interval);
-        setIsPolling(false);
-      };
-    } else if (!dnsStatus.enabled && isPolling) {
-      setIsPolling(false);
-    }
-  }, [dnsStatus.enabled, isPolling, drivers, getDriverContent]);
+  // Polling removed - now using SSE for real-time driver content updates
 
   const handleDriverFormChange = (scope: string, driver: string) => {
     setDriverForms(prev => ({

@@ -14,6 +14,7 @@ interface DriverStore {
   drivers: DriversResponse | null;
   loading: boolean;
   error: string | null;
+  connected: boolean;
   
   // Driver content state
   contentLoading: boolean;
@@ -25,13 +26,19 @@ interface DriverStore {
   setDriver: (scope: DriverType, driver: string, options?: Record<string, any>) => Promise<void>;
   clearError: () => void;
   clearContent: (scope?: DriverType) => void;
+  connectSSE: () => void;
+  disconnectSSE: () => void;
 }
+
+// SSE instance for driver store
+let driverEventSource: EventSource | null = null;
 
 export const useDriverStore = create<DriverStore>((set, get) => ({
   // Initial state
   drivers: null,
   loading: false,
   error: null,
+  connected: false,
   contentLoading: false,
   driverContent: {
     [DRIVER_TYPES.LOGS]: null,
@@ -158,5 +165,84 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
         }
       });
     }
+  },
+
+  connectSSE: () => {
+    if (driverEventSource) {
+      driverEventSource.close();
+    }
+
+    driverEventSource = new EventSource('/api/dns/events');
+    
+    driverEventSource.onopen = () => {
+      set({ connected: true });
+    };
+
+    driverEventSource.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        
+        switch (message.type) {
+          case 'drivers':
+            // Convert the raw driver data to DriverContentResponse format
+            const formattedContent: Record<DriverType, DriverContentResponse | null> = {
+              [DRIVER_TYPES.LOGS]: null,
+              [DRIVER_TYPES.CACHE]: null,
+              [DRIVER_TYPES.BLACKLIST]: null,
+              [DRIVER_TYPES.WHITELIST]: null,
+            };
+
+            for (const [scope, data] of Object.entries(message.data)) {
+              const typedData = data as any;
+              if (typedData && typedData.success) {
+                formattedContent[scope as DriverType] = {
+                  success: true,
+                  content: typedData.content,
+                  driver: typedData.driver,
+                  timestamp: typedData.timestamp
+                };
+              } else if (typedData && !typedData.success) {
+                formattedContent[scope as DriverType] = {
+                  success: false,
+                  error: typedData.error,
+                  timestamp: typedData.timestamp
+                };
+              }
+            }
+
+            set({ driverContent: formattedContent });
+            break;
+          case 'error':
+            console.error('Driver SSE error:', message.data);
+            break;
+          case 'keepalive':
+            // Keep connection alive
+            break;
+        }
+      } catch (error) {
+        console.error('Failed to parse driver SSE message:', error);
+      }
+    };
+
+    driverEventSource.onerror = (error) => {
+      console.error('Driver SSE error:', error);
+      set({ connected: false });
+      
+      // Auto-reconnect after 5 seconds
+      setTimeout(() => {
+        if (get().connected === false) {
+          get().connectSSE();
+        }
+      }, 5000);
+    };
+
+  },
+
+  disconnectSSE: () => {
+    if (driverEventSource) {
+      driverEventSource.close();
+      driverEventSource = null;
+    }
+    set({ connected: false });
   },
 }));

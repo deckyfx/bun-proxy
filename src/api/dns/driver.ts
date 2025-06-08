@@ -165,6 +165,7 @@ async function getDriverContent(config: DriverConfig): Promise<Response> {
     }
 
     const response: DriverContentResponse = {
+      success: true,
       scope: config.scope,
       driver: drivers[config.scope]?.constructor.DRIVER_NAME || 'unknown',
       content,
@@ -180,11 +181,13 @@ async function getDriverContent(config: DriverConfig): Promise<Response> {
     });
 
   } catch (error) {
-    return new Response(JSON.stringify({
-      error: 'Failed to get driver content',
-      message: error instanceof Error ? error.message : 'Unknown error',
-      scope: config.scope
-    }), {
+    const response: DriverContentResponse = {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: Date.now()
+    };
+    
+    return new Response(JSON.stringify(response), {
       status: 500,
       headers: { 'Content-Type': 'application/json' }
     });

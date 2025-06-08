@@ -60,6 +60,9 @@ class DNSManager {
     this.server = new DNSProxyServer(port || config.DNS_PORT, providers, this.lastUsedDrivers);
     await this.server.start();
     this.isEnabled = true;
+    
+    // Notify SSE clients of status change
+    this.notifyStatusChange();
   }
 
   async stop(): Promise<void> {
@@ -67,6 +70,9 @@ class DNSManager {
       await this.server.stop();
       this.server = undefined;
       this.isEnabled = false;
+      
+      // Notify SSE clients of status change
+      this.notifyStatusChange();
     }
   }
 
@@ -107,6 +113,15 @@ class DNSManager {
 
   updateDriverConfiguration(drivers: Partial<DNSServerDrivers>): void {
     this.lastUsedDrivers = { ...this.lastUsedDrivers, ...drivers };
+  }
+
+  private notifyStatusChange(): void {
+    // Import here to avoid circular dependency
+    import("@src/api/dns/events").then(({ notifyStatusChange }) => {
+      notifyStatusChange();
+    }).catch(() => {
+      // SSE module not available, ignore
+    });
   }
 }
 

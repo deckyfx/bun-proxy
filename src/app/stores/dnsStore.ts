@@ -19,6 +19,7 @@ interface DNSStore {
   loading: boolean;
   testLoading: boolean;
   testResult: string;
+  connected: boolean;
   
   // Actions
   fetchStatus: () => Promise<void>;
@@ -33,7 +34,12 @@ interface DNSStore {
   toggleServer: () => Promise<void>;
   testDnsConfig: (configId: string) => Promise<void>;
   updateConfig: (updates: Partial<DNSConfig>) => void;
+  connectSSE: () => void;
+  disconnectSSE: () => void;
 }
+
+// SSE instance
+let eventSource: EventSource | null = null;
 
 export const useDNSStore = create<DNSStore>((set, get) => ({
   // Initial state
@@ -54,6 +60,7 @@ export const useDNSStore = create<DNSStore>((set, get) => ({
   loading: false,
   testLoading: false,
   testResult: '',
+  connected: false,
 
   // Actions
   fetchStatus: async () => {
@@ -161,5 +168,58 @@ export const useDNSStore = create<DNSStore>((set, get) => ({
     set((state) => ({
       config: { ...state.config, ...updates }
     }));
+  },
+
+  connectSSE: () => {
+    if (eventSource) {
+      eventSource.close();
+    }
+
+    eventSource = new EventSource('/api/dns/events');
+    
+    eventSource.onopen = () => {
+      set({ connected: true });
+    };
+
+    eventSource.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        
+        switch (message.type) {
+          case 'status':
+            set({ status: message.data });
+            break;
+          case 'error':
+            console.error('DNS SSE error:', message.data);
+            break;
+          case 'keepalive':
+            // Keep connection alive
+            break;
+        }
+      } catch (error) {
+        console.error('Failed to parse SSE message:', error);
+      }
+    };
+
+    eventSource.onerror = (error) => {
+      console.error('DNS SSE error:', error);
+      set({ connected: false });
+      
+      // Auto-reconnect after 5 seconds
+      setTimeout(() => {
+        if (get().connected === false) {
+          get().connectSSE();
+        }
+      }, 5000);
+    };
+
+  },
+
+  disconnectSSE: () => {
+    if (eventSource) {
+      eventSource.close();
+      eventSource = null;
+    }
+    set({ connected: false });
   },
 }));

@@ -47,9 +47,12 @@ export interface DriversResponse {
 }
 
 export interface DriverContentResponse {
-  scope: DriverType;
-  driver: string;
-  content: any;
+  success: boolean;
+  scope?: DriverType;
+  driver?: string;
+  content?: any;
+  error?: string;
+  timestamp?: number;
   metadata?: {
     total?: number;
     filtered?: number;
