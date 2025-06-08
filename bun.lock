@@ -4,7 +4,9 @@
     "": {
       "name": "bun-ssr",
       "dependencies": {
+        "@types/dns2": "^2.0.9",
         "dns-packet": "^5.6.1",
+        "dns2": "^2.1.0",
         "drizzle-orm": "^0.43.1",
         "jsonwebtoken": "^9.0.2",
         "jwt-decode": "^4.0.0",
@@ -165,6 +167,8 @@
 
     "@types/dns-packet": ["@types/dns-packet@5.6.5", "", { "dependencies": { "@types/node": "*" } }, "sha512-qXOC7XLOEe43ehtWJCMnQXvgcIpv6rPmQ1jXT98Ad8A3TB1Ue50jsCbSSSyuazScEuZ/Q026vHbrOTVkmwA+7Q=="],
 
+    "@types/dns2": ["@types/dns2@2.0.9", "", { "dependencies": { "@types/node": "*" } }, "sha512-+eiPSuo/KfvaaW7DiMf/vrt9mhxbZCCgxoCa/c2qMVSuZQus4BzBuKRh8XBwcUXWAtvI8QuZOp13UODJNq9DXg=="],
+
     "@types/jsonwebtoken": ["@types/jsonwebtoken@9.0.9", "", { "dependencies": { "@types/ms": "*", "@types/node": "*" } }, "sha512-uoe+GxEuHbvy12OUQct2X9JenKM3qAscquYymuQN4fMWG9DBQtykrQEFcAbVACF7qaLw9BePSodUL0kquqBJpQ=="],
 
     "@types/ms": ["@types/ms@2.1.0", "", {}, "sha512-GsCCIZDE/p3i96vtEqx+7dBUGXrc7zeSK3wwPHIaRThS+9OhWIXRqzs4d6k1SVU8g91DrNRWxWUGhp5KXQb2VA=="],
@@ -196,6 +200,8 @@
     "detect-libc": ["detect-libc@1.0.3", "", { "bin": { "detect-libc": "./bin/detect-libc.js" } }, "sha512-pGjwhsmsp4kL2RTz08wcOlGN83otlqHeD/Z5T8GXZB+/YcpQ/dgo+lbU8ZsGxV0HIvqqxo9l7mqYwyYMD9bKDg=="],
 
     "dns-packet": ["dns-packet@5.6.1", "", { "dependencies": { "@leichtgewicht/ip-codec": "^2.0.1" } }, "sha512-l4gcSouhcgIKRvyy99RNVOgxXiicE+2jZoNmaNmZ6JXiGajBOJAesk1OBlJuM5k2c+eudGdLxDqXuPCKIj6kpw=="],
+
+    "dns2": ["dns2@2.1.0", "", {}, "sha512-m27K11aQalRbmUs7RLaz6aPyceLjAoqjPRNTdE7qUouQpl+PC8Bi67O+i9SuJUPbQC8dxFrczAxfmTPuTKHNkw=="],
 
     "drizzle-kit": ["drizzle-kit@0.31.1", "", { "dependencies": { "@drizzle-team/brocli": "^0.10.2", "@esbuild-kit/esm-loader": "^2.5.5", "esbuild": "^0.25.2", "esbuild-register": "^3.5.0" }, "bin": { "drizzle-kit": "bin.cjs" } }, "sha512-PUjYKWtzOzPtdtQlTHQG3qfv4Y0XT8+Eas6UbxCmxTj7qgMf+39dDujf1BP1I+qqZtw9uzwTh8jYtkMuCq+B0Q=="],
 

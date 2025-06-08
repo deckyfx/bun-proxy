@@ -1,4 +1,5 @@
 import * as dgram from "dgram";
+import DNS2 from "dns2";
 import { BaseProvider } from "./providers";
 import { DNSQueryTracker } from "./tracker";
 import type { BaseDriver as LogsBaseDriver, LogEntry } from "./drivers/logs/BaseDriver";
@@ -9,7 +10,7 @@ import { ConsoleDriver } from "./drivers/logs/ConsoleDriver";
 import { InMemoryDriver as CacheInMemoryDriver } from "./drivers/caches/InMemoryDriver";
 import { InMemoryDriver as BlacklistInMemoryDriver } from "./drivers/blacklist/InMemoryDriver";
 import { InMemoryDriver as WhitelistInMemoryDriver } from "./drivers/whitelist/InMemoryDriver";
-import { DNSParser, type CacheableRecord } from "./parser";
+import { DNSParser, type CacheableRecord, type CachedDNSResponse } from "./parser";
 
 // Global log event emitter for SSE
 class LogEventEmitter {
@@ -52,7 +53,7 @@ export interface DNSServerDrivers {
 }
 
 export class DNSProxyServer {
-  private server?: dgram.Socket;
+  private server?: ReturnType<typeof DNS2.createServer>;
   private isRunning: boolean = false;
   private port: number;
   private providers: BaseProvider[];
@@ -79,33 +80,118 @@ export class DNSProxyServer {
       throw new Error("DNS server is already running");
     }
 
-    this.server = dgram.createSocket("udp4");
-
-    this.server.on("message", async (msg: Buffer, rinfo: dgram.RemoteInfo) => {
-      try {
-        const response = await this.handleDNSQuery(msg, { address: rinfo.address, port: rinfo.port });
-        this.server?.send(response, rinfo.port, rinfo.address);
-      } catch (error) {
-        console.error("DNS query handling error:", error);
+    this.server = DNS2.createServer({
+      udp: true,
+      tcp: false,
+      handle: async (request, send, rinfo) => {
+        try {
+          const responseBuffer = await this.handleDNSRequest(request, rinfo);
+          send(responseBuffer as unknown as DNS2.DnsResponse);
+        } catch (error) {
+          console.error("DNS query handling error:", error);
+          
+          // Emit DNS handling error event to SSE and persistent logs
+          const { v4: uuidv4 } = require('uuid');
+          const errorLogEntry: LogEntry = {
+            type: 'response',
+            requestId: uuidv4(),
+            timestamp: new Date(),
+            level: 'error',
+            query: {
+              domain: 'unknown',
+              type: 'UNKNOWN',
+              querySize: 0,
+              clientIP: rinfo?.address || 'unknown',
+              clientPort: rinfo?.port || 0
+            },
+            provider: 'dns_handler',
+            attempt: 1,
+            responseTime: 0,
+            success: false,
+            cached: false,
+            blocked: false,
+            whitelisted: false,
+            source: 'client',
+            error: error instanceof Error ? error.message : String(error)
+          };
+          
+          // Pipe to both SSE and persistent driver
+          logEventEmitter.emit(errorLogEntry);
+          if (this.drivers.logs) {
+            this.drivers.logs.log(errorLogEntry);
+          }
+          
+          // Send SERVFAIL response as buffer
+          const errorBuffer = require('dns-packet').encode({
+            id: (request as any).header?.id || 0,
+            type: 'response',
+            flags: 384, // QR=1, RD=1
+            questions: (request as any).questions || [],
+            answers: [],
+            rcode: 2 // SERVFAIL
+          });
+          send(errorBuffer as unknown as DNS2.DnsResponse);
+        }
       }
     });
 
-    this.server.on("error", (error) => {
-      console.error("DNS server error:", error);
-    });
-
     return new Promise<void>((resolve, reject) => {
-      this.server?.on("listening", () => {
-        this.isRunning = true;
-        console.log(`DNS proxy server started on port ${this.port}`);
-        resolve();
-      });
-
-      this.server?.on("error", (error) => {
-        reject(error);
-      });
-
-      this.server?.bind(this.port);
+      this.server?.listen({ udp: this.port })
+        .then(() => {
+          this.isRunning = true;
+          console.log(`DNS proxy server started on port ${this.port}`);
+          
+          // Emit server start event to SSE and persistent logs
+          const startLogEntry: LogEntry = {
+            type: 'server_event',
+            requestId: 'server-start',
+            timestamp: new Date(),
+            level: 'info',
+            eventType: 'started',
+            message: `DNS proxy server started on port ${this.port}`,
+            port: this.port,
+            configChanges: {
+              providers: this.providers.map(p => p.name),
+              driversEnabled: Object.keys(this.drivers).length
+            }
+          };
+          
+          // Pipe to both SSE and persistent driver
+          logEventEmitter.emit(startLogEntry);
+          if (this.drivers.logs) {
+            this.drivers.logs.log(startLogEntry);
+          }
+          
+          resolve();
+        })
+        .catch((error) => {
+          console.error("DNS server error:", error);
+          
+          // Emit server start error event to SSE and persistent logs
+          const errorLogEntry: LogEntry = {
+            type: 'server_event',
+            requestId: 'server-start-error',
+            timestamp: new Date(),
+            level: 'error',
+            eventType: 'crashed',
+            message: `Failed to start DNS proxy server on port ${this.port}`,
+            port: this.port,
+            error: error instanceof Error ? error.message : String(error),
+            errorStack: error instanceof Error ? error.stack : undefined,
+            configChanges: {
+              providers: this.providers.map(p => p.name),
+              driversEnabled: Object.keys(this.drivers).length
+            }
+          };
+          
+          // Pipe to both SSE and persistent driver
+          logEventEmitter.emit(errorLogEntry);
+          if (this.drivers.logs) {
+            this.drivers.logs.log(errorLogEntry);
+          }
+          
+          reject(error);
+        });
     });
   }
 
@@ -114,33 +200,126 @@ export class DNSProxyServer {
       return;
     }
 
-    return new Promise<void>((resolve) => {
-      this.server?.close(() => {
-        this.isRunning = false;
-        console.log("DNS proxy server stopped");
-        resolve();
-      });
-    });
+    try {
+      await this.server.close();
+      this.isRunning = false;
+      console.log("DNS proxy server stopped");
+      
+      // Emit server stop event to SSE and persistent logs
+      const stopLogEntry: LogEntry = {
+        type: 'server_event',
+        requestId: 'server-stop',
+        timestamp: new Date(),
+        level: 'info',
+        eventType: 'stopped',
+        message: `DNS proxy server stopped on port ${this.port}`,
+        port: this.port
+      };
+      
+      // Pipe to both SSE and persistent driver
+      logEventEmitter.emit(stopLogEntry);
+      if (this.drivers.logs) {
+        this.drivers.logs.log(stopLogEntry);
+      }
+    } catch (error) {
+      console.error("Error stopping DNS server:", error);
+      
+      // Emit server stop error event to SSE and persistent logs
+      const errorLogEntry: LogEntry = {
+        type: 'server_event',
+        requestId: 'server-stop-error',
+        timestamp: new Date(),
+        level: 'error',
+        eventType: 'crashed',
+        message: `Failed to stop DNS proxy server on port ${this.port}`,
+        port: this.port,
+        error: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined
+      };
+      
+      // Pipe to both SSE and persistent driver
+      logEventEmitter.emit(errorLogEntry);
+      if (this.drivers.logs) {
+        this.drivers.logs.log(errorLogEntry);
+      }
+      
+      throw error;
+    }
   }
 
-  private async handleDNSQuery(query: Buffer, clientInfo?: { address: string; port: number }): Promise<Buffer> {
+  private async handleDNSRequest(request: any, rinfo: any): Promise<Buffer> {
     const startTime = Date.now();
-    const queryInfo = DNSParser.parseDNSQuery(query);
     const { v4: uuidv4 } = require('uuid');
     const requestId = uuidv4();
+    
+    // Extract query info from DNS2 packet
+    const question = request.questions[0];
+    if (!question) {
+      throw new Error('No question in DNS request');
+    }
+    
+    const queryInfo = {
+      domain: question.name,
+      type: this.getTypeString(question.type),
+      typeCode: question.type
+    };
+    
+    const clientInfo = { address: rinfo?.address, port: rinfo?.port };
     
     // Check cache first
     const cacheKey = `${queryInfo.domain}:${queryInfo.type}`;
     let cached = false;
-    let cachedResponse: Buffer | null = null;
     
     if (this.drivers.cache) {
       try {
-        const cachedRecord = await this.drivers.cache.get(cacheKey) as CacheableRecord | null;
-        if (cachedRecord && !this.isCacheEntryExpired(cachedRecord)) {
-          // Create DNS response from cached data
-          cachedResponse = DNSParser.createDNSResponse(query, [cachedRecord]);
+        const cachedData = await this.drivers.cache.get(cacheKey) as CachedDNSResponse | null;
+        if (cachedData && !this.isCachedResponseExpired(cachedData)) {
+          // Create DNS response from cached detailed JSON data
+          const queryBuffer = this.packetToBuffer(request);
+          const responseBuffer = DNSParser.createDNSResponseFromCachedData(queryBuffer, cachedData);
+          
           cached = true;
+          
+          // Extract IP addresses from cached data for logging
+          const resolvedAddresses = cachedData.answers
+            .filter(record => record.type === 'A' || record.type === 'AAAA')
+            .map(record => record.data as string);
+          
+          // Log cache hit and return immediately
+          const responseTime = Date.now() - startTime;
+          
+          const responseLogEntry: LogEntry = {
+            type: 'response',
+            requestId,
+            timestamp: new Date(),
+            level: 'info',
+            query: {
+              domain: queryInfo.domain,
+              type: queryInfo.type,
+              querySize: queryBuffer.length,
+              clientIP: clientInfo?.address,
+              clientPort: clientInfo?.port
+            },
+            provider: 'cache',
+            attempt: 1,
+            responseTime,
+            response: {
+              responseSize: responseBuffer.length,
+              resolvedAddresses: resolvedAddresses.length > 0 ? resolvedAddresses : undefined
+            },
+            success: true,
+            cached: true,
+            blocked: false,
+            whitelisted: false,
+            source: 'client'
+          };
+          
+          logEventEmitter.emit(responseLogEntry);
+          if (this.drivers.logs) {
+            await this.drivers.logs.log(responseLogEntry);
+          }
+          
+          return responseBuffer;
         }
       } catch (error) {
         console.warn('Cache lookup failed:', error);
@@ -176,7 +355,7 @@ export class DNSProxyServer {
       query: {
         domain: queryInfo.domain,
         type: queryInfo.type,
-        querySize: query.length,
+        querySize: request.toBuffer().length,
         clientIP: clientInfo?.address,
         clientPort: clientInfo?.port
       },
@@ -193,46 +372,19 @@ export class DNSProxyServer {
       await this.drivers.logs.log(requestLogEntry);
     }
 
-    // If cached, return cached response
-    if (cached && cachedResponse) {
-      const responseTime = Date.now() - startTime;
-      
-      const responseLogEntry: LogEntry = {
-        type: 'response',
-        requestId,
-        timestamp: new Date(),
-        level: 'info',
-        query: {
-          domain: queryInfo.domain,
-          type: queryInfo.type,
-          querySize: query.length,
-          clientIP: clientInfo?.address,
-          clientPort: clientInfo?.port
-        },
-        provider: 'cache',
-        attempt: 1,
-        responseTime,
-        response: {
-          responseSize: cachedResponse.length
-        },
-        success: true,
-        cached: true,
-        blocked,
-        whitelisted,
-        source: 'client'
-      };
-      
-      logEventEmitter.emit(responseLogEntry);
-      if (this.drivers.logs) {
-        await this.drivers.logs.log(responseLogEntry);
-      }
-      
-      return cachedResponse;
-    }
+    // Cache response was already returned above if found
 
     // If blocked, return NXDOMAIN
     if (blocked && !whitelisted) {
-      const blockedResponse = DNSParser.createBlockedResponse(query);
+      const queryBuffer = this.packetToBuffer(request);
+      const blockedResponseBuffer = require('dns-packet').encode({
+        id: (request as any).header?.id || 0,
+        type: 'response',
+        flags: 384, // QR=1, RD=1
+        questions: (request as any).questions || [],
+        answers: [],
+        rcode: 3 // NXDOMAIN
+      });
       const responseTime = Date.now() - startTime;
       
       const responseLogEntry: LogEntry = {
@@ -243,7 +395,7 @@ export class DNSProxyServer {
         query: {
           domain: queryInfo.domain,
           type: queryInfo.type,
-          querySize: query.length,
+          querySize: queryBuffer.length,
           clientIP: clientInfo?.address,
           clientPort: clientInfo?.port
         },
@@ -251,7 +403,7 @@ export class DNSProxyServer {
         attempt: 1,
         responseTime,
         response: {
-          responseSize: blockedResponse.length
+          responseSize: blockedResponseBuffer.length
         },
         success: true,
         cached: false,
@@ -265,38 +417,48 @@ export class DNSProxyServer {
         await this.drivers.logs.log(responseLogEntry);
       }
       
-      return blockedResponse;
+      return blockedResponseBuffer;
     }
 
     // Try providers in order based on usage optimization
     for (const provider of this.getOptimizedProviderOrder()) {
       try {
-        const response = await provider.resolve(query);
+        // Convert DNS2 request to buffer for provider
+        const queryBuffer = this.packetToBuffer(request);
+        const responseBuffer = await provider.resolve(queryBuffer);
         const responseTime = Date.now() - startTime;
         
         this.tracker.recordQuery(provider.name, queryInfo.domain);
         
-        // Parse the response to extract resolved addresses
+        // Parse the response using detailed JSON parsing for caching
         let resolvedAddresses: string[] = [];
         try {
-          const parsedResponse = DNSParser.parseDNSResponse(response);
-          const cacheableRecords = DNSParser.extractCacheableRecords(parsedResponse);
+          const detailedResponse = DNSParser.parseDetailedDNSResponse(responseBuffer);
           
-          // Cache the records
-          if (this.drivers.cache && cacheableRecords.length > 0) {
-            for (const record of cacheableRecords) {
-              const key = `${record.domain}:${record.type}`;
-              await this.drivers.cache.set(key, record, record.ttl * 1000); // TTL in milliseconds
-            }
+          // Cache the detailed JSON response
+          if (this.drivers.cache) {
+            const cacheKey = `${queryInfo.domain}:${queryInfo.type}`;
+            const cacheTTL = detailedResponse.ttl * 1000; // Convert to milliseconds
+            await this.drivers.cache.set(cacheKey, detailedResponse, cacheTTL);
           }
           
           // Extract addresses for logging
-          resolvedAddresses = cacheableRecords.flatMap(record => record.addresses);
+          resolvedAddresses = detailedResponse.answers
+            .filter(record => record.type === 'A' || record.type === 'AAAA')
+            .map(record => record.data as string);
         } catch (parseError) {
           console.warn('Failed to parse DNS response for caching:', parseError);
+          // Fallback to old caching method
+          try {
+            const parsedResponse = DNSParser.parseDNSResponse(responseBuffer);
+            const cacheableRecords = DNSParser.extractCacheableRecords(parsedResponse);
+            resolvedAddresses = cacheableRecords.flatMap(record => record.addresses);
+          } catch (fallbackError) {
+            console.warn('Fallback parsing also failed:', fallbackError);
+          }
         }
         
-        // Log the successful response (dual-pipe: SSE + persistent driver)
+        // Log the successful response
         const responseLogEntry: LogEntry = {
           type: 'response',
           requestId,
@@ -305,7 +467,7 @@ export class DNSProxyServer {
           query: {
             domain: queryInfo.domain,
             type: queryInfo.type,
-            querySize: query.length,
+            querySize: queryBuffer.length,
             clientIP: clientInfo?.address,
             clientPort: clientInfo?.port
           },
@@ -313,7 +475,7 @@ export class DNSProxyServer {
           attempt: 1,
           responseTime,
           response: {
-            responseSize: response.length,
+            responseSize: responseBuffer.length,
             resolvedAddresses: resolvedAddresses.length > 0 ? resolvedAddresses : undefined
           },
           success: true,
@@ -323,17 +485,15 @@ export class DNSProxyServer {
           source: 'client'
         };
         
-        // Pipe to both SSE and persistent driver
         logEventEmitter.emit(responseLogEntry);
         if (this.drivers.logs) {
           await this.drivers.logs.log(responseLogEntry);
         }
         
-        return response;
+        return responseBuffer;
       } catch (error) {
         const responseTime = Date.now() - startTime;
         
-        // Log the failed response (dual-pipe: SSE + persistent driver)
         const errorLogEntry: LogEntry = {
           type: 'response',
           requestId,
@@ -342,7 +502,7 @@ export class DNSProxyServer {
           query: {
             domain: queryInfo.domain,
             type: queryInfo.type,
-            querySize: query.length,
+            querySize: this.packetToBuffer(request).length,
             clientIP: clientInfo?.address,
             clientPort: clientInfo?.port
           },
@@ -357,7 +517,6 @@ export class DNSProxyServer {
           source: 'client'
         };
         
-        // Pipe to both SSE and persistent driver
         logEventEmitter.emit(errorLogEntry);
         if (this.drivers.logs) {
           await this.drivers.logs.log(errorLogEntry);
@@ -368,11 +527,25 @@ export class DNSProxyServer {
       }
     }
 
-    throw new Error("All DNS providers failed");
+    // If all providers fail, return SERVFAIL
+    const queryBuffer = this.packetToBuffer(request);
+    const failResponseBuffer = require('dns-packet').encode({
+      id: (request as any).header?.id || 0,
+      type: 'response',
+      flags: 384, // QR=1, RD=1
+      questions: (request as any).questions || [],
+      answers: [],
+      rcode: 2 // SERVFAIL
+    });
+    return failResponseBuffer;
   }
 
   private isCacheEntryExpired(record: CacheableRecord): boolean {
     return Date.now() > record.timestamp + (record.ttl * 1000);
+  }
+
+  private isCachedResponseExpired(response: CachedDNSResponse): boolean {
+    return Date.now() > response.timestamp + (response.ttl * 1000);
   }
 
   private getOptimizedProviderOrder(): BaseProvider[] {
@@ -461,5 +634,84 @@ export class DNSProxyServer {
         whitelist: !!this.drivers.whitelist,
       },
     };
+  }
+
+  // Helper methods for DNS2 packet conversion
+  private packetToBuffer(packet: any): Buffer {
+    // If it's already a Buffer, return it
+    if (Buffer.isBuffer(packet)) {
+      return packet;
+    }
+    
+    // Use DNS2's toBuffer method if available
+    if (packet.toBuffer && typeof packet.toBuffer === 'function') {
+      try {
+        const result = packet.toBuffer();
+        if (Buffer.isBuffer(result)) {
+          return result;
+        }
+      } catch (error) {
+        console.warn('Failed to use packet.toBuffer():', error);
+      }
+    }
+    
+    // Fallback: use dns-packet to encode the response
+    try {
+      return require('dns-packet').encode({
+        id: packet.header?.id || 0,
+        type: 'response',
+        flags: packet.header?.qr ? 384 : 0, // QR=1, RD=1
+        questions: packet.questions || [],
+        answers: packet.answers || [],
+        rcode: packet.header?.rcode || 0
+      });
+    } catch (error) {
+      console.warn('Failed to encode DNS packet:', error);
+      // Return a minimal valid DNS response
+      return require('dns-packet').encode({
+        id: 0,
+        type: 'response',
+        flags: 384,
+        questions: [],
+        answers: [],
+        rcode: 2 // SERVFAIL
+      });
+    }
+  }
+
+  private bufferToPacket(buffer: Buffer): any {
+    // Parse buffer using dns-packet and convert to DNS2 format
+    try {
+      const parsed = DNSParser.parseDNSResponse(buffer);
+      // Return a simplified packet-like object that DNS2 can work with
+      return {
+        header: parsed.id ? { id: parsed.id } : {},
+        questions: parsed.questions || [],
+        answers: parsed.answers || [],
+        toBuffer: () => buffer
+      };
+    } catch (error) {
+      console.warn('Failed to parse DNS buffer:', error);
+      // Return a basic structure
+      return {
+        header: {},
+        questions: [],
+        answers: [],
+        toBuffer: () => buffer
+      };
+    }
+  }
+
+  private getTypeString(typeCode: number): string {
+    const typeMap: Record<number, string> = {
+      1: 'A',
+      28: 'AAAA',
+      15: 'MX',
+      5: 'CNAME',
+      2: 'NS',
+      12: 'PTR',
+      16: 'TXT'
+    };
+    return typeMap[typeCode] || typeCode.toString();
   }
 }
