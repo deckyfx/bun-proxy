@@ -93,6 +93,10 @@ class DNSManager {
     };
   }
 
+  getServerInstance() {
+    return this.server;
+  }
+
   getCurrentNextDnsConfigId(): string | undefined {
     return this.currentNextDnsConfigId;
   }

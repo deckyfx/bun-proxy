@@ -9,3 +9,6 @@ export { Card } from './Card';
 export { Switch } from './Switch';
 export { Select } from './Select';
 export { Tooltip } from './Tooltip';
+export { ErrorBoundary } from './ErrorBoundary';
+export { default as Table } from './Table';
+export type { TableColumn, TableProps } from './Table';

@@ -1,5 +1,7 @@
 import { dnsManager } from "@src/dns/manager";
 import { DRIVER_TYPES, type DriverType } from "@src/types/driver";
+import { logEventEmitter } from "@src/dns/server";
+import type { LogEntry } from "@src/dns/drivers/logs/BaseDriver";
 
 // Export function to trigger immediate status update
 export function notifyStatusChange() {
@@ -14,16 +16,31 @@ export function notifyStatusChange() {
 }
 
 interface SSEMessage {
-  type: "status" | "drivers" | "error" | "keepalive";
-  data: any;
+  type: "status" | "drivers" | "error" | "keepalive" | "log_event";
+  data?: any;
+  drivers?: any;
   timestamp: number;
 }
 
 // Track active connections
 const connections = new Set<ReadableStreamDefaultController>();
 
+// No log buffer needed - SSE only streams real-time events
+// Persistence is handled by the storage driver
+
 let statusWatcher: Timer | null = null;
 let driverWatcher: Timer | null = null;
+
+// Handle real-time log events from DNS server
+function handleLogEvent(logEntry: LogEntry) {
+  // Immediately send the new log event to all connected clients
+  // No caching/buffering - pure real-time streaming
+  sendToAllClients({
+    type: "log_event",
+    data: logEntry,
+    timestamp: Date.now(),
+  });
+}
 
 function sendToAllClients(message: SSEMessage) {
   const data = `data: ${JSON.stringify(message)}\n\n`;
@@ -39,6 +56,9 @@ function sendToAllClients(message: SSEMessage) {
 
 function startWatchers() {
   if (statusWatcher) return;
+
+  // Start listening to real-time log events
+  logEventEmitter.addListener(handleLogEvent);
 
   // Watch DNS status changes every 2 seconds
   statusWatcher = setInterval(async () => {
@@ -70,7 +90,8 @@ function startWatchers() {
               // Each driver type has different methods to get content
               switch (driverType) {
                 case DRIVER_TYPES.LOGS:
-                  content = await (driver as any).getLogs({ limit: 100 });
+                  // Skip logs in periodic updates - they're sent in real-time via log_event
+                  content = null;
                   break;
                 case DRIVER_TYPES.CACHE:
                   const cacheStats = await (driver as any).stats();
@@ -108,7 +129,7 @@ function startWatchers() {
 
         sendToAllClients({
           type: "drivers",
-          data: driversData,
+          drivers: driversData,
           timestamp: Date.now(),
         });
       }
@@ -135,6 +156,9 @@ function startWatchers() {
 }
 
 function stopWatchers() {
+  // Stop listening to real-time log events
+  logEventEmitter.removeListener(handleLogEvent);
+  
   if (statusWatcher) {
     clearInterval(statusWatcher);
     statusWatcher = null;
@@ -167,6 +191,8 @@ export async function HandleSSEEvents() {
       controller.enqueue(
         new TextEncoder().encode(`data: ${JSON.stringify(initialMessage)}\n\n`)
       );
+      
+      // No initial log buffer - client can call separate HTTP endpoint for history
     },
 
     cancel() {

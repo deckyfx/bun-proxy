@@ -1,7 +1,7 @@
 import * as dgram from "dgram";
 import { BaseProvider } from "./providers";
 import { DNSQueryTracker } from "./tracker";
-import type { BaseDriver as LogsBaseDriver } from "./drivers/logs/BaseDriver";
+import type { BaseDriver as LogsBaseDriver, LogEntry } from "./drivers/logs/BaseDriver";
 import type { BaseDriver as CachesBaseDriver } from "./drivers/caches/BaseDriver";
 import type { BaseDriver as BlacklistBaseDriver } from "./drivers/blacklist/BaseDriver";
 import type { BaseDriver as WhitelistBaseDriver } from "./drivers/whitelist/BaseDriver";
@@ -9,6 +9,40 @@ import { ConsoleDriver } from "./drivers/logs/ConsoleDriver";
 import { InMemoryDriver as CacheInMemoryDriver } from "./drivers/caches/InMemoryDriver";
 import { InMemoryDriver as BlacklistInMemoryDriver } from "./drivers/blacklist/InMemoryDriver";
 import { InMemoryDriver as WhitelistInMemoryDriver } from "./drivers/whitelist/InMemoryDriver";
+import { DNSParser, type CacheableRecord } from "./parser";
+
+// Global log event emitter for SSE
+class LogEventEmitter {
+  private static instance: LogEventEmitter;
+  private listeners: Set<(logEntry: LogEntry) => void> = new Set();
+
+  static getInstance(): LogEventEmitter {
+    if (!LogEventEmitter.instance) {
+      LogEventEmitter.instance = new LogEventEmitter();
+    }
+    return LogEventEmitter.instance;
+  }
+
+  addListener(callback: (logEntry: LogEntry) => void): void {
+    this.listeners.add(callback);
+  }
+
+  removeListener(callback: (logEntry: LogEntry) => void): void {
+    this.listeners.delete(callback);
+  }
+
+  emit(logEntry: LogEntry): void {
+    this.listeners.forEach(callback => {
+      try {
+        callback(logEntry);
+      } catch (error) {
+        console.error('Error in log event listener:', error);
+      }
+    });
+  }
+}
+
+export const logEventEmitter = LogEventEmitter.getInstance();
 
 export interface DNSServerDrivers {
   logs?: LogsBaseDriver;
@@ -91,14 +125,80 @@ export class DNSProxyServer {
 
   private async handleDNSQuery(query: Buffer, clientInfo?: { address: string; port: number }): Promise<Buffer> {
     const startTime = Date.now();
-    const queryInfo = this.parseDNSQuery(query);
+    const queryInfo = DNSParser.parseDNSQuery(query);
     const { v4: uuidv4 } = require('uuid');
     const requestId = uuidv4();
     
-    // Log the incoming request
+    // Check cache first
+    const cacheKey = `${queryInfo.domain}:${queryInfo.type}`;
+    let cached = false;
+    let cachedResponse: Buffer | null = null;
+    
+    if (this.drivers.cache) {
+      try {
+        const cachedRecord = await this.drivers.cache.get(cacheKey) as CacheableRecord | null;
+        if (cachedRecord && !this.isCacheEntryExpired(cachedRecord)) {
+          // Create DNS response from cached data
+          cachedResponse = DNSParser.createDNSResponse(query, [cachedRecord]);
+          cached = true;
+        }
+      } catch (error) {
+        console.warn('Cache lookup failed:', error);
+      }
+    }
+    
+    // Check blacklist
+    let blocked = false;
+    if (this.drivers.blacklist) {
+      try {
+        blocked = await this.drivers.blacklist.contains(queryInfo.domain);
+      } catch (error) {
+        console.warn('Blacklist check failed:', error);
+      }
+    }
+    
+    // Check whitelist
+    let whitelisted = false;
+    if (this.drivers.whitelist) {
+      try {
+        whitelisted = await this.drivers.whitelist.contains(queryInfo.domain);
+      } catch (error) {
+        console.warn('Whitelist check failed:', error);
+      }
+    }
+    
+    // Log the incoming request (dual-pipe: SSE + persistent driver)
+    const requestLogEntry: LogEntry = {
+      type: 'request',
+      requestId,
+      timestamp: new Date(),
+      level: 'info',
+      query: {
+        domain: queryInfo.domain,
+        type: queryInfo.type,
+        querySize: query.length,
+        clientIP: clientInfo?.address,
+        clientPort: clientInfo?.port
+      },
+      source: 'client',
+      cached,
+      blocked,
+      whitelisted,
+      attempt: 1
+    };
+    
+    // Pipe to both SSE and persistent driver
+    logEventEmitter.emit(requestLogEntry);
     if (this.drivers.logs) {
-      await this.drivers.logs.log({
-        type: 'request',
+      await this.drivers.logs.log(requestLogEntry);
+    }
+
+    // If cached, return cached response
+    if (cached && cachedResponse) {
+      const responseTime = Date.now() - startTime;
+      
+      const responseLogEntry: LogEntry = {
+        type: 'response',
         requestId,
         timestamp: new Date(),
         level: 'info',
@@ -109,12 +209,63 @@ export class DNSProxyServer {
           clientIP: clientInfo?.address,
           clientPort: clientInfo?.port
         },
-        source: 'client',
-        cached: false, // TODO: check cache
-        blocked: false, // TODO: check blacklist
-        whitelisted: false, // TODO: check whitelist
-        attempt: 1
-      });
+        provider: 'cache',
+        attempt: 1,
+        responseTime,
+        response: {
+          responseSize: cachedResponse.length
+        },
+        success: true,
+        cached: true,
+        blocked,
+        whitelisted,
+        source: 'client'
+      };
+      
+      logEventEmitter.emit(responseLogEntry);
+      if (this.drivers.logs) {
+        await this.drivers.logs.log(responseLogEntry);
+      }
+      
+      return cachedResponse;
+    }
+
+    // If blocked, return NXDOMAIN
+    if (blocked && !whitelisted) {
+      const blockedResponse = DNSParser.createBlockedResponse(query);
+      const responseTime = Date.now() - startTime;
+      
+      const responseLogEntry: LogEntry = {
+        type: 'response',
+        requestId,
+        timestamp: new Date(),
+        level: 'info',
+        query: {
+          domain: queryInfo.domain,
+          type: queryInfo.type,
+          querySize: query.length,
+          clientIP: clientInfo?.address,
+          clientPort: clientInfo?.port
+        },
+        provider: 'blacklist',
+        attempt: 1,
+        responseTime,
+        response: {
+          responseSize: blockedResponse.length
+        },
+        success: true,
+        cached: false,
+        blocked: true,
+        whitelisted,
+        source: 'client'
+      };
+      
+      logEventEmitter.emit(responseLogEntry);
+      if (this.drivers.logs) {
+        await this.drivers.logs.log(responseLogEntry);
+      }
+      
+      return blockedResponse;
     }
 
     // Try providers in order based on usage optimization
@@ -125,62 +276,91 @@ export class DNSProxyServer {
         
         this.tracker.recordQuery(provider.name, queryInfo.domain);
         
-        // Log the successful response
+        // Parse the response to extract resolved addresses
+        let resolvedAddresses: string[] = [];
+        try {
+          const parsedResponse = DNSParser.parseDNSResponse(response);
+          const cacheableRecords = DNSParser.extractCacheableRecords(parsedResponse);
+          
+          // Cache the records
+          if (this.drivers.cache && cacheableRecords.length > 0) {
+            for (const record of cacheableRecords) {
+              const key = `${record.domain}:${record.type}`;
+              await this.drivers.cache.set(key, record, record.ttl * 1000); // TTL in milliseconds
+            }
+          }
+          
+          // Extract addresses for logging
+          resolvedAddresses = cacheableRecords.flatMap(record => record.addresses);
+        } catch (parseError) {
+          console.warn('Failed to parse DNS response for caching:', parseError);
+        }
+        
+        // Log the successful response (dual-pipe: SSE + persistent driver)
+        const responseLogEntry: LogEntry = {
+          type: 'response',
+          requestId,
+          timestamp: new Date(),
+          level: 'info',
+          query: {
+            domain: queryInfo.domain,
+            type: queryInfo.type,
+            querySize: query.length,
+            clientIP: clientInfo?.address,
+            clientPort: clientInfo?.port
+          },
+          provider: provider.name,
+          attempt: 1,
+          responseTime,
+          response: {
+            responseSize: response.length,
+            resolvedAddresses: resolvedAddresses.length > 0 ? resolvedAddresses : undefined
+          },
+          success: true,
+          cached: false,
+          blocked,
+          whitelisted,
+          source: 'client'
+        };
+        
+        // Pipe to both SSE and persistent driver
+        logEventEmitter.emit(responseLogEntry);
         if (this.drivers.logs) {
-          await this.drivers.logs.log({
-            type: 'response',
-            requestId,
-            timestamp: new Date(),
-            level: 'info',
-            query: {
-              domain: queryInfo.domain,
-              type: queryInfo.type,
-              querySize: query.length,
-              clientIP: clientInfo?.address,
-              clientPort: clientInfo?.port
-            },
-            provider: provider.name,
-            attempt: 1,
-            responseTime,
-            response: {
-              responseSize: response.length
-            },
-            success: true,
-            cached: false,
-            blocked: false,
-            whitelisted: false,
-            source: 'client'
-          });
+          await this.drivers.logs.log(responseLogEntry);
         }
         
         return response;
       } catch (error) {
         const responseTime = Date.now() - startTime;
         
-        // Log the failed response
+        // Log the failed response (dual-pipe: SSE + persistent driver)
+        const errorLogEntry: LogEntry = {
+          type: 'response',
+          requestId,
+          timestamp: new Date(),
+          level: 'error',
+          query: {
+            domain: queryInfo.domain,
+            type: queryInfo.type,
+            querySize: query.length,
+            clientIP: clientInfo?.address,
+            clientPort: clientInfo?.port
+          },
+          provider: provider.name,
+          attempt: 1,
+          responseTime,
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+          cached: false,
+          blocked,
+          whitelisted,
+          source: 'client'
+        };
+        
+        // Pipe to both SSE and persistent driver
+        logEventEmitter.emit(errorLogEntry);
         if (this.drivers.logs) {
-          await this.drivers.logs.log({
-            type: 'response',
-            requestId,
-            timestamp: new Date(),
-            level: 'error',
-            query: {
-              domain: queryInfo.domain,
-              type: queryInfo.type,
-              querySize: query.length,
-              clientIP: clientInfo?.address,
-              clientPort: clientInfo?.port
-            },
-            provider: provider.name,
-            attempt: 1,
-            responseTime,
-            success: false,
-            error: error instanceof Error ? error.message : String(error),
-            cached: false,
-            blocked: false,
-            whitelisted: false,
-            source: 'client'
-          });
+          await this.drivers.logs.log(errorLogEntry);
         }
         
         console.warn(`Provider ${provider.name} failed:`, error);
@@ -191,40 +371,8 @@ export class DNSProxyServer {
     throw new Error("All DNS providers failed");
   }
 
-  private parseDNSQuery(query: Buffer): { domain: string; type: string } {
-    // Basic DNS query parsing
-    let offset = 12; // Skip header
-    let domain = "";
-
-    if (!query || typeof query.length !== "number") {
-      return { domain: "", type: "UNKNOWN" };
-    }
-
-    const queryLength = query.length;
-    while (offset < queryLength) {
-      const length = query[offset];
-      if (length === 0) break;
-
-      if (domain) domain += ".";
-      const endOffset = offset + 1 + length!;
-      if (endOffset <= queryLength) {
-        domain += query.subarray(offset + 1, endOffset).toString();
-      }
-      offset += length! + 1;
-    }
-
-    if (offset + 1 < queryLength) {
-      const type = query.readUInt16BE(offset + 1);
-      const typeMap: Record<number, string> = {
-        1: "A",
-        28: "AAAA",
-        15: "MX",
-        5: "CNAME",
-      };
-      return { domain, type: typeMap[type] || "UNKNOWN" };
-    }
-
-    return { domain, type: "UNKNOWN" };
+  private isCacheEntryExpired(record: CacheableRecord): boolean {
+    return Date.now() > record.timestamp + (record.ttl * 1000);
   }
 
   private getOptimizedProviderOrder(): BaseProvider[] {

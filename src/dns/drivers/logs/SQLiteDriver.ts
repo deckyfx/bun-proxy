@@ -1,4 +1,4 @@
-import { BaseDriver, type LogEntry, type LogOptions, type LogFilter, type RequestLogEntry, type ResponseLogEntry } from './BaseDriver';
+import { BaseDriver, type LogEntry, type LogOptions, type LogFilter, type RequestLogEntry, type ResponseLogEntry, type ServerEventLogEntry } from './BaseDriver';
 import { Database } from 'bun:sqlite';
 import { mkdir } from 'fs/promises';
 import { dirname } from 'path';
@@ -85,7 +85,7 @@ export class SQLiteDriver extends BaseDriver {
         entry.query.clientIP || null,
         entry.query.clientPort || null
       );
-    } else {
+    } else if (entry.type === 'response') {
       // Log response entry
       const stmt = this.db.prepare(`
         INSERT INTO dns_logs (
@@ -116,6 +116,10 @@ export class SQLiteDriver extends BaseDriver {
         entry.query.clientIP || null,
         entry.query.clientPort || null
       );
+    } else {
+      // Log server event entry - for now, we skip these as the current schema doesn't support them
+      // TODO: Extend schema to support server events or use a separate table
+      console.warn('SQLiteDriver: Server event logging not yet implemented, skipping entry:', entry.type);
     }
   }
 

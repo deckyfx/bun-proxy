@@ -36,14 +36,23 @@ export class FileDriver extends BaseDriver {
       });
 
       if (filter) {
+        if (filter.type) {
+          logs = logs.filter(log => log.type === filter.type);
+        }
         if (filter.level) {
           logs = logs.filter(log => log.level === filter.level);
         }
         if (filter.domain) {
-          logs = logs.filter(log => log.query?.domain?.includes(filter.domain!) || false);
+          logs = logs.filter(log => {
+            if (log.type === 'server_event') return false;
+            return log.query?.domain?.includes(filter.domain!) || false;
+          });
         }
         if (filter.provider) {
-          logs = logs.filter(log => log.provider === filter.provider);
+          logs = logs.filter(log => {
+            if (log.type === 'server_event') return false;
+            return 'provider' in log && log.provider === filter.provider;
+          });
         }
         if (filter.startTime) {
           logs = logs.filter(log => log.timestamp >= filter.startTime!);

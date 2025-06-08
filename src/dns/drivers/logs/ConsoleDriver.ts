@@ -21,14 +21,31 @@ export class ConsoleDriver extends BaseDriver {
     // Format log entry for console output
     const timestamp = entry.timestamp.toISOString();
     const level = entry.level.toUpperCase().padEnd(5);
-    const domain = entry.query.domain;
-    const queryType = entry.query.type;
     const requestId = entry.requestId.substring(0, 8); // Short ID for display
     
     let logMessage: string;
     
-    if (entry.type === 'request') {
+    if (entry.type === 'server_event') {
+      // Server event log format
+      logMessage = `[${timestamp}] ${level} ➤ SRV ${entry.eventType.toUpperCase()}: ${entry.message} [${requestId}]`;
+      
+      if (entry.port) {
+        logMessage += ` (port: ${entry.port})`;
+      }
+      
+      if (entry.error) {
+        logMessage += ` - Error: ${entry.error}`;
+      }
+      
+      if (entry.uptime) {
+        logMessage += ` (uptime: ${Math.floor(entry.uptime / 60)}m ${entry.uptime % 60}s)`;
+      }
+      
+    } else if (entry.type === 'request') {
       // Request log format
+      const domain = entry.query.domain;
+      const queryType = entry.query.type;
+      
       const indicators = [];
       if (entry.cached) indicators.push('🔄');
       if (entry.blocked) indicators.push('🚫');
@@ -40,8 +57,10 @@ export class ConsoleDriver extends BaseDriver {
       
       logMessage = `[${timestamp}] ${level} ➤ REQ ${domain} (${queryType})${providerStr}${statusStr}${attemptStr} [${requestId}]`;
       
-    } else {
+    } else if (entry.type === 'response') {
       // Response log format
+      const domain = entry.query.domain;
+      const queryType = entry.query.type;
       const success = entry.success ? '✓' : '✗';
       const responseTime = `${entry.responseTime}ms`;
       
@@ -65,6 +84,9 @@ export class ConsoleDriver extends BaseDriver {
           logMessage += ` (${entry.errorCode})`;
         }
       }
+    } else {
+      // Fallback for unknown log types
+      logMessage = `[${timestamp}] ${level} ➤ UNKNOWN ${(entry as any).type}: ${JSON.stringify(entry)} [${requestId}]`;
     }
 
     // Use appropriate console method based on log level

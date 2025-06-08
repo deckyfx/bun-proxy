@@ -31,17 +31,20 @@ export interface DNSResponseInfo {
 // Base interface for all log entries
 export interface BaseLogEntry {
   // Correlation
-  requestId: string; // UUID to correlate request/response pairs
+  requestId: string; // UUID to correlate request/response pairs or event ID
   timestamp: Date;
   level: 'info' | 'warn' | 'error' | 'debug';
-  
+}
+
+// Base interface for DNS query-related log entries
+export interface DNSLogEntry extends BaseLogEntry {
   // Request context
   query: DNSQueryInfo;
   source: 'client' | 'internal' | 'upstream';
 }
 
 // Request log entry - logged immediately when request arrives
-export interface RequestLogEntry extends BaseLogEntry {
+export interface RequestLogEntry extends DNSLogEntry {
   type: 'request';
   
   // Routing decisions
@@ -58,7 +61,7 @@ export interface RequestLogEntry extends BaseLogEntry {
 }
 
 // Response log entry - logged when response received or error occurs
-export interface ResponseLogEntry extends BaseLogEntry {
+export interface ResponseLogEntry extends DNSLogEntry {
   type: 'response';
   
   // Provider that handled the request
@@ -83,8 +86,44 @@ export interface ResponseLogEntry extends BaseLogEntry {
   whitelisted: boolean; // Was whitelisted?
 }
 
+// Server lifecycle event log entry
+export interface ServerEventLogEntry extends BaseLogEntry {
+  type: 'server_event';
+  
+  // Event type
+  eventType: 'started' | 'stopped' | 'crashed' | 'restarted' | 'config_changed' | 'driver_changed';
+  
+  // Event details
+  message: string;
+  
+  // Server context
+  port?: number;
+  pid?: number;
+  
+  // Error information (for crashes)
+  error?: string;
+  errorStack?: string;
+  
+  // Configuration context (for config/driver changes)
+  configChanges?: Record<string, any>;
+  driverChanges?: {
+    scope: string;
+    oldDriver: string;
+    newDriver: string;
+  };
+  
+  // Performance context
+  uptime?: number; // seconds since last start
+  memoryUsage?: {
+    rss: number;
+    heapTotal: number;
+    heapUsed: number;
+    external: number;
+  };
+}
+
 // Union type for all log entries
-export type LogEntry = RequestLogEntry | ResponseLogEntry;
+export type LogEntry = RequestLogEntry | ResponseLogEntry | ServerEventLogEntry;
 
 export interface LogOptions {
   maxEntries?: number;
@@ -105,7 +144,10 @@ export interface LogOptions {
 
 export interface LogFilter {
   // Entry type
-  type?: 'request' | 'response';
+  type?: 'request' | 'response' | 'server_event';
+  
+  // Server event filters
+  eventType?: 'started' | 'stopped' | 'crashed' | 'restarted' | 'config_changed' | 'driver_changed';
   
   // Basic filters
   level?: string;
@@ -183,8 +225,31 @@ export abstract class BaseDriver {
     return await this.getLogs({ ...filter, type: 'response' }) as ResponseLogEntry[];
   }
 
+  async getServerEventsOnly(filter?: Omit<LogFilter, 'type'>): Promise<ServerEventLogEntry[]> {
+    return await this.getLogs({ ...filter, type: 'server_event' }) as ServerEventLogEntry[];
+  }
+
   async getAllLogs(filter?: Omit<LogFilter, 'type'>): Promise<LogEntry[]> {
     return await this.getLogs(filter); // No type filter = get all
+  }
+
+  // Helper method to log server events
+  async logServerEvent(
+    eventType: ServerEventLogEntry['eventType'],
+    message: string,
+    details?: Partial<Omit<ServerEventLogEntry, 'requestId' | 'timestamp' | 'type' | 'eventType' | 'message'>>
+  ): Promise<void> {
+    const entry: ServerEventLogEntry = {
+      requestId: this.generateRequestId(),
+      timestamp: new Date(),
+      level: eventType === 'crashed' ? 'error' : eventType === 'started' ? 'info' : 'warn',
+      type: 'server_event',
+      eventType,
+      message,
+      ...details
+    };
+    
+    await this.log(entry);
   }
 
   // Utility method to generate request IDs

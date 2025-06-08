@@ -8,7 +8,8 @@ export const DRIVER_TYPES = {
 
 export const DRIVER_METHODS = {
   SET: 'SET',
-  GET: 'GET'
+  GET: 'GET',
+  CLEAR: 'CLEAR'
 } as const;
 
 export type DriverType = typeof DRIVER_TYPES[keyof typeof DRIVER_TYPES];

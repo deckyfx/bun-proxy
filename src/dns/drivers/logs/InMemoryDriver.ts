@@ -23,14 +23,20 @@ export class InMemoryDriver extends BaseDriver {
     let filtered = [...this.logs];
 
     if (filter) {
+      if (filter.type) {
+        filtered = filtered.filter(log => log.type === filter.type);
+      }
+      if (filter.eventType) {
+        filtered = filtered.filter(log => log.type === 'server_event' && log.eventType === filter.eventType);
+      }
       if (filter.level) {
         filtered = filtered.filter(log => log.level === filter.level);
       }
       if (filter.domain) {
-        filtered = filtered.filter(log => log.query.domain.includes(filter.domain!));
+        filtered = filtered.filter(log => (log.type === 'request' || log.type === 'response') && log.query.domain.includes(filter.domain!));
       }
       if (filter.provider) {
-        filtered = filtered.filter(log => log.provider === filter.provider);
+        filtered = filtered.filter(log => (log.type === 'request' || log.type === 'response') && 'provider' in log && log.provider === filter.provider);
       }
       if (filter.startTime) {
         filtered = filtered.filter(log => log.timestamp >= filter.startTime!);

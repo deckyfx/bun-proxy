@@ -3,12 +3,88 @@ import {
   DRIVER_TYPES,
   DRIVER_METHODS,
   type DriverConfig,
-  type DriverStatus,
   type AvailableDrivers,
   type DriversResponse,
   type DriverContentResponse,
-  type DriverSetResponse
 } from "@src/types/driver";
+
+// Import driver classes
+import { ConsoleDriver } from "@src/dns/drivers/logs/ConsoleDriver";
+import { InMemoryDriver as LogsInMemoryDriver } from "@src/dns/drivers/logs/InMemoryDriver";
+import { FileDriver as LogsFileDriver } from "@src/dns/drivers/logs/FileDriver";
+import { SQLiteDriver as LogsSQLiteDriver } from "@src/dns/drivers/logs/SQLiteDriver";
+
+import { InMemoryDriver as CacheInMemoryDriver } from "@src/dns/drivers/caches/InMemoryDriver";
+import { FileDriver as CacheFileDriver } from "@src/dns/drivers/caches/FileDriver";
+import { SQLiteDriver as CacheSQLiteDriver } from "@src/dns/drivers/caches/SQLiteDriver";
+
+import { InMemoryDriver as BlacklistInMemoryDriver } from "@src/dns/drivers/blacklist/InMemoryDriver";
+import { FileDriver as BlacklistFileDriver } from "@src/dns/drivers/blacklist/FileDriver";
+import { SQLiteDriver as BlacklistSQLiteDriver } from "@src/dns/drivers/blacklist/SQLiteDriver";
+
+import { InMemoryDriver as WhitelistInMemoryDriver } from "@src/dns/drivers/whitelist/InMemoryDriver";
+import { FileDriver as WhitelistFileDriver } from "@src/dns/drivers/whitelist/FileDriver";
+import { SQLiteDriver as WhitelistSQLiteDriver } from "@src/dns/drivers/whitelist/SQLiteDriver";
+
+// Helper function to create driver instances
+function createDriverInstance(scope: string, driverName: string, options?: Record<string, any>): any {
+  const driverOptions = options || {};
+  
+  switch (scope) {
+    case DRIVER_TYPES.LOGS:
+      switch (driverName.toLowerCase()) {
+        case 'console':
+          return new ConsoleDriver(driverOptions);
+        case 'inmemory':
+          return new LogsInMemoryDriver(driverOptions);
+        case 'file':
+          return new LogsFileDriver(driverOptions);
+        case 'sqlite':
+          return new LogsSQLiteDriver(driverOptions);
+        default:
+          throw new Error(`Unknown logs driver: ${driverName}`);
+      }
+      
+    case DRIVER_TYPES.CACHE:
+      switch (driverName.toLowerCase()) {
+        case 'inmemory':
+          return new CacheInMemoryDriver(driverOptions);
+        case 'file':
+          return new CacheFileDriver(driverOptions);
+        case 'sqlite':
+          return new CacheSQLiteDriver(driverOptions);
+        default:
+          throw new Error(`Unknown cache driver: ${driverName}`);
+      }
+      
+    case DRIVER_TYPES.BLACKLIST:
+      switch (driverName.toLowerCase()) {
+        case 'inmemory':
+          return new BlacklistInMemoryDriver(driverOptions);
+        case 'file':
+          return new BlacklistFileDriver(driverOptions);
+        case 'sqlite':
+          return new BlacklistSQLiteDriver(driverOptions);
+        default:
+          throw new Error(`Unknown blacklist driver: ${driverName}`);
+      }
+      
+    case DRIVER_TYPES.WHITELIST:
+      switch (driverName.toLowerCase()) {
+        case 'inmemory':
+          return new WhitelistInMemoryDriver(driverOptions);
+        case 'file':
+          return new WhitelistFileDriver(driverOptions);
+        case 'sqlite':
+          return new WhitelistSQLiteDriver(driverOptions);
+        default:
+          throw new Error(`Unknown whitelist driver: ${driverName}`);
+      }
+      
+    default:
+      throw new Error(`Unknown driver scope: ${scope}`);
+  }
+}
 
 // Get current driver status
 function getCurrentDriverStatus(): DriversResponse['current'] {
@@ -16,8 +92,14 @@ function getCurrentDriverStatus(): DriversResponse['current'] {
   let drivers: any;
 
   if (status.server) {
-    // Server is running - get current drivers from server
-    drivers = (status.server as any).drivers || {};
+    // Server is running - get current drivers from actual server instance
+    const serverInstance = dnsManager.getServerInstance();
+    if (serverInstance) {
+      drivers = (serverInstance as any).drivers || {};
+    } else {
+      // Fallback to last used drivers if server instance not available
+      drivers = dnsManager.getLastUsedDrivers();
+    }
   } else {
     // Server is not running - use last used drivers or defaults
     const lastUsedDrivers = dnsManager.getLastUsedDrivers();
@@ -72,18 +154,96 @@ async function setDriver(config: DriverConfig): Promise<Response> {
     });
   }
 
-  // TODO: Implement driver switching logic
-  // This would require adding methods to DNSProxyServer to update drivers at runtime
-  
-  return new Response(JSON.stringify({
-    message: 'Driver switching not yet implemented',
-    scope: config.scope,
-    driver: config.driver,
-    options: config.options
-  }), {
-    status: 501,
-    headers: { 'Content-Type': 'application/json' }
-  });
+  try {
+    // Create new driver instance
+    const newDriverInstance = createDriverInstance(config.scope, config.driver, config.options);
+    
+    // Get current drivers configuration
+    const currentDrivers = dnsManager.getLastUsedDrivers();
+    
+    // Update the specific driver
+    const updatedDrivers = {
+      ...currentDrivers,
+      [config.scope]: newDriverInstance
+    };
+    
+    // Update driver configuration in manager
+    dnsManager.updateDriverConfiguration(updatedDrivers);
+    
+    // If server is running, hot-swap the driver without restart
+    const status = dnsManager.getStatus();
+    let driverUpdated = false;
+    
+    if (status.enabled && status.server) {
+      console.log(`Hot-swapping ${config.scope} driver to: ${config.driver}`);
+      
+      // Get the actual server instance for hot-swapping
+      const server = dnsManager.getServerInstance();
+      
+      if (!server) {
+        console.warn('Server instance not available for hot-swapping');
+        return new Response(JSON.stringify({
+          error: 'Server not available',
+          message: 'DNS server instance not available for driver hot-swapping',
+          scope: config.scope,
+          driver: config.driver
+        }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      
+      switch (config.scope) {
+        case DRIVER_TYPES.LOGS:
+          server.setLogDriver(newDriverInstance);
+          driverUpdated = true;
+          break;
+        case DRIVER_TYPES.CACHE:
+          server.setCacheDriver(newDriverInstance);
+          driverUpdated = true;
+          break;
+        case DRIVER_TYPES.BLACKLIST:
+          server.setBlacklistDriver(newDriverInstance);
+          driverUpdated = true;
+          break;
+        case DRIVER_TYPES.WHITELIST:
+          server.setWhitelistDriver(newDriverInstance);
+          driverUpdated = true;
+          break;
+        default:
+          console.warn(`Unknown driver scope for hot-swap: ${config.scope}`);
+      }
+      
+      if (driverUpdated) {
+        console.log(`Successfully hot-swapped ${config.scope} driver to: ${config.driver}`);
+      }
+    }
+    
+    return new Response(JSON.stringify({
+      message: `${config.scope} driver successfully changed to ${config.driver}`,
+      scope: config.scope,
+      driver: config.driver,
+      options: config.options,
+      hotSwapped: driverUpdated,
+      serverRunning: status.enabled
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+    
+  } catch (error) {
+    console.error(`Failed to set ${config.scope} driver:`, error);
+    
+    return new Response(JSON.stringify({
+      error: 'Failed to set driver',
+      message: error instanceof Error ? error.message : 'Unknown error',
+      scope: config.scope,
+      driver: config.driver
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
 }
 
 // Get driver content
@@ -92,8 +252,20 @@ async function getDriverContent(config: DriverConfig): Promise<Response> {
   let drivers: any;
 
   if (status.server) {
-    // Server is running - get drivers from server
-    drivers = (status.server as any).drivers || {};
+    // Server is running - get actual driver instances from server
+    const serverInstance = dnsManager.getServerInstance();
+    if (serverInstance) {
+      drivers = (serverInstance as any).drivers || {};
+    } else {
+      return new Response(JSON.stringify({
+        error: 'Cannot access server drivers',
+        message: 'Server instance not available',
+        scope: config.scope
+      }), {
+        status: 503,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
   } else {
     // Server not running - cannot get content from inactive drivers
     return new Response(JSON.stringify({
@@ -194,6 +366,121 @@ async function getDriverContent(config: DriverConfig): Promise<Response> {
   }
 }
 
+// Clear driver content
+async function clearDriver(config: DriverConfig): Promise<Response> {
+  const status = dnsManager.getStatus();
+  let drivers: any;
+
+  if (status.server) {
+    // Server is running - get actual driver instances from server
+    const serverInstance = dnsManager.getServerInstance();
+    if (serverInstance) {
+      drivers = (serverInstance as any).drivers || {};
+    } else {
+      return new Response(JSON.stringify({
+        error: 'Cannot access server drivers',
+        message: 'Server instance not available',
+        scope: config.scope
+      }), {
+        status: 503,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+  } else {
+    // Server not running - cannot clear content from inactive drivers
+    return new Response(JSON.stringify({
+      error: 'Cannot clear driver content',
+      message: 'DNS server must be running to clear driver content',
+      scope: config.scope
+    }), {
+      status: 503,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+
+  try {
+    let cleared = false;
+    let message = '';
+
+    switch (config.scope) {
+      case DRIVER_TYPES.LOGS:
+        const logsDriver = drivers.logs;
+        if (logsDriver && typeof logsDriver.clear === 'function') {
+          await logsDriver.clear();
+          cleared = true;
+          message = 'Logs cleared successfully';
+        } else {
+          message = 'Logs driver does not support clearing';
+        }
+        break;
+
+      case DRIVER_TYPES.CACHE:
+        const cacheDriver = drivers.cache;
+        if (cacheDriver && typeof cacheDriver.clear === 'function') {
+          await cacheDriver.clear();
+          cleared = true;
+          message = 'Cache cleared successfully';
+        } else {
+          message = 'Cache driver does not support clearing';
+        }
+        break;
+
+      case DRIVER_TYPES.BLACKLIST:
+        const blacklistDriver = drivers.blacklist;
+        if (blacklistDriver && typeof blacklistDriver.clear === 'function') {
+          await blacklistDriver.clear();
+          cleared = true;
+          message = 'Blacklist cleared successfully';
+        } else {
+          message = 'Blacklist driver does not support clearing';
+        }
+        break;
+
+      case DRIVER_TYPES.WHITELIST:
+        const whitelistDriver = drivers.whitelist;
+        if (whitelistDriver && typeof whitelistDriver.clear === 'function') {
+          await whitelistDriver.clear();
+          cleared = true;
+          message = 'Whitelist cleared successfully';
+        } else {
+          message = 'Whitelist driver does not support clearing';
+        }
+        break;
+
+      default:
+        return new Response(JSON.stringify({
+          error: 'Invalid scope',
+          message: 'scope must be logs, cache, blacklist, or whitelist'
+        }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        });
+    }
+
+    return new Response(JSON.stringify({
+      success: cleared,
+      message,
+      scope: config.scope,
+      driver: drivers[config.scope]?.constructor.DRIVER_NAME || 'unknown',
+      timestamp: new Date().toISOString()
+    }), {
+      status: cleared ? 200 : 400,
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+  } catch (error) {
+    return new Response(JSON.stringify({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      scope: config.scope,
+      timestamp: new Date().toISOString()
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
+
 // GET /api/dns/driver - Get current driver configuration and available drivers
 export async function GetDriverConfiguration(_req: Request): Promise<Response> {
   try {
@@ -239,10 +526,12 @@ export async function HandleDriverOperation(req: Request): Promise<Response> {
       return await setDriver(body);
     } else if (body.method === DRIVER_METHODS.GET) {
       return await getDriverContent(body);
+    } else if (body.method === DRIVER_METHODS.CLEAR) {
+      return await clearDriver(body);
     } else {
       return new Response(JSON.stringify({
         error: 'Invalid method',
-        message: 'method must be SET or GET'
+        message: 'method must be SET, GET, or CLEAR'
       }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' }
