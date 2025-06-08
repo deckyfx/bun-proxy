@@ -1,6 +1,8 @@
 import { BaseDriver, type LogEntry, type LogOptions, type LogFilter } from './BaseDriver';
 
 export class ConsoleDriver extends BaseDriver {
+  static readonly DRIVER_NAME = 'console';
+  
   private logCount = 0;
   private firstLogTime?: Date;
   private lastLogTime?: Date;

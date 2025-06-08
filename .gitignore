@@ -36,3 +36,8 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 data/*
 src/db/drizzle/*
 package.json
+
+cache_test.json
+logs_test.json
+get_driver_test.json
+set_driver_test.json

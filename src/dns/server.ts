@@ -30,7 +30,7 @@ export class DNSProxyServer {
     this.providers = providers;
     this.tracker = new DNSQueryTracker();
     
-    // Set default drivers
+    // Set default drivers - logs: Console, others: InMemory
     this.drivers = {
       logs: new ConsoleDriver(),
       cache: new CacheInMemoryDriver(),

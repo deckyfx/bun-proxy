@@ -1,6 +1,8 @@
 import { BaseDriver, type LogEntry, type LogOptions, type LogFilter } from './BaseDriver';
 
 export class InMemoryDriver extends BaseDriver {
+  static readonly DRIVER_NAME = 'inmemory';
+  
   private logs: LogEntry[] = [];
   private maxEntries: number;
 

@@ -1,6 +1,8 @@
 import { BaseDriver, type CacheEntry, type CacheOptions } from './BaseDriver';
 
 export class InMemoryDriver<T = any> extends BaseDriver<T> {
+  static readonly DRIVER_NAME = 'inmemory';
+  
   private cache = new Map<string, CacheEntry<T>>();
   private cleanupTimer?: Timer;
 

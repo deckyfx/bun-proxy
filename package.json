@@ -10,9 +10,8 @@
     "migrate": "bun run src/db/migrations/index.ts",
     "seed": "bun run src/db/seeds/index.ts",
     "setup-db": "bun run drizzle && bun run migrate && bun run seed",
-    "test:server": "bun run src/index.ts",
     "test:hit": "bun run test-dns.ts",
-    "test:serverhit": "bun test:dev > ./server.log 2>&1 & DEV_PID=$!; sleep 2; bun test:hit > ./client.log 2>&1; kill $DEV_PID"
+    "test:serverhit": "bun dev > ./server.log 2>&1 & DEV_PID=$!; bun test:hit > ./client.log 2>&1; kill $DEV_PID"
   },
   "dependencies": {
     "drizzle-orm": "^0.43.1",

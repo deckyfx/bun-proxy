@@ -5,6 +5,8 @@ import { mkdir } from 'fs/promises';
 import { dirname } from 'path';
 
 export class SQLiteDriver extends BaseDriver {
+  static readonly DRIVER_NAME = 'sqlite';
+  
   private db!: Database;
   private dbPath: string;
 

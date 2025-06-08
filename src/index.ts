@@ -66,5 +66,5 @@ export default Bun.serve({
 if (Config.DEBUG_START_DNS_SERVER) {
   setTimeout(() => {
     dnsManager.start();
-  }, 1000);
+  }, 500);
 }

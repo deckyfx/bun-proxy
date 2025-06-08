@@ -3,6 +3,8 @@ import { readFile, writeFile, appendFile, mkdir } from 'fs/promises';
 import { dirname } from 'path';
 
 export class FileDriver extends BaseDriver {
+  static readonly DRIVER_NAME = 'file';
+  
   private filePath: string;
 
   constructor(options: LogOptions = {}) {

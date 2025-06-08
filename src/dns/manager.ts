@@ -1,4 +1,4 @@
-import { DNSProxyServer } from "./server";
+import { DNSProxyServer, type DNSServerDrivers } from "./server";
 import {
   NextDNSProvider,
   CloudflareProvider,
@@ -6,11 +6,26 @@ import {
   OpenDNSProvider,
 } from "./providers";
 import config from "@src/config";
+import { ConsoleDriver } from "./drivers/logs/ConsoleDriver";
+import { InMemoryDriver as CacheInMemoryDriver } from "./drivers/caches/InMemoryDriver";
+import { InMemoryDriver as BlacklistInMemoryDriver } from "./drivers/blacklist/InMemoryDriver";
+import { InMemoryDriver as WhitelistInMemoryDriver } from "./drivers/whitelist/InMemoryDriver";
 
 class DNSManager {
   private server?: DNSProxyServer;
   private isEnabled: boolean = false;
   private currentNextDnsConfigId?: string;
+  private lastUsedDrivers: DNSServerDrivers;
+
+  constructor() {
+    // Initialize default drivers configuration - logs: Console, others: InMemory
+    this.lastUsedDrivers = {
+      logs: new ConsoleDriver(),
+      cache: new CacheInMemoryDriver(),
+      blacklist: new BlacklistInMemoryDriver(),
+      whitelist: new WhitelistInMemoryDriver(),
+    };
+  }
 
   async start(
     port?: number,
@@ -18,7 +33,8 @@ class DNSManager {
       enableWhitelist?: boolean;
       secondaryDns?: string;
       nextdnsConfigId?: string;
-    }
+    },
+    drivers?: DNSServerDrivers
   ): Promise<void> {
     if (this.server) {
       throw new Error("DNS server is already running");
@@ -36,7 +52,12 @@ class DNSManager {
       new OpenDNSProvider(),
     ];
 
-    this.server = new DNSProxyServer(port || config.DNS_PORT, providers);
+    // Update last used drivers if provided
+    if (drivers) {
+      this.lastUsedDrivers = { ...this.lastUsedDrivers, ...drivers };
+    }
+
+    this.server = new DNSProxyServer(port || config.DNS_PORT, providers, this.lastUsedDrivers);
     await this.server.start();
     this.isEnabled = true;
   }
@@ -68,6 +89,24 @@ class DNSManager {
 
   getCurrentNextDnsConfigId(): string | undefined {
     return this.currentNextDnsConfigId;
+  }
+
+  getDefaultDrivers(): DNSServerDrivers {
+    // Default drivers - logs: Console, others: InMemory
+    return {
+      logs: new ConsoleDriver(),
+      cache: new CacheInMemoryDriver(),
+      blacklist: new BlacklistInMemoryDriver(),
+      whitelist: new WhitelistInMemoryDriver(),
+    };
+  }
+
+  getLastUsedDrivers(): DNSServerDrivers {
+    return this.lastUsedDrivers;
+  }
+
+  updateDriverConfiguration(drivers: Partial<DNSServerDrivers>): void {
+    this.lastUsedDrivers = { ...this.lastUsedDrivers, ...drivers };
   }
 }
 

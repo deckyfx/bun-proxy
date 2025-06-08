@@ -1,6 +1,8 @@
 import { BaseDriver, type WhitelistEntry, type WhitelistOptions, type WhitelistStats } from './BaseDriver';
 
 export class InMemoryDriver extends BaseDriver {
+  static readonly DRIVER_NAME = 'inmemory';
+  
   private entries = new Map<string, WhitelistEntry>();
 
   constructor(options: WhitelistOptions = {}) {

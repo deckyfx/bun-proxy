@@ -11,12 +11,51 @@ const DASHBOARD_PORT = process.env.DASHBOARD_PORT || 3000;
 const DNS_HOST = "127.0.0.1";
 let DNS_PORT = process.env.DNS_PROXY_PORT || 53;
 
+async function waitForHealth(
+  url: string,
+  timeoutMs = 10000,
+  intervalMs = 1000
+) {
+  const start = Date.now();
+  while (true) {
+    try {
+      const res = await fetch(url);
+      if (res.ok) {
+        console.log(`✅ Health check passed`);
+        return;
+      } else {
+        console.log(
+          `⚠️ Health check returned status ${res.status}, retrying...`
+        );
+      }
+    } catch (e) {
+      console.log(
+        `⚠️ Health check fetch failed: ${(e as Error).message}, retrying...`
+      );
+    }
+    if (Date.now() - start > timeoutMs) {
+      throw new Error(`Timeout waiting for health check at ${url}`);
+    }
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+}
+async function checkHealth() {
+  const healthUrl = `http://localhost:${DASHBOARD_PORT}/api/system/health`;
+
+  try {
+    await waitForHealth(healthUrl);
+  } catch (e) {
+    console.error("❌ Server health check failed:", e);
+    process.exit(1);
+  }
+}
+
 // Fetch actual DNS configuration from the API
 async function getDNSConfig() {
   try {
-    const response = await fetch(
-      `http://localhost:${DASHBOARD_PORT}/api/dns/config`
-    );
+    const URL = `http://localhost:${DASHBOARD_PORT}/api/dns/config`;
+    console.log("Hit", URL);
+    const response = await fetch(URL);
     if (response.ok) {
       const data = await response.json();
       DNS_PORT = data.config.port;
@@ -257,6 +296,8 @@ async function testDNSQuery(domain: string): Promise<void> {
 async function main() {
   console.log("🚀 DNS Server Test Suite");
   console.log("========================");
+
+  await checkHealth();
 
   // First, get the actual DNS configuration from the running server
   await getDNSConfig();

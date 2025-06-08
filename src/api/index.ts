@@ -4,7 +4,7 @@ async function ApiHandler(
   req: Bun.BunRequest<"/api/:scope/:command">
 ): Promise<Response> {
   const { scope, command } = req.params;
-  const method = req.method as 'GET' | 'POST' | 'PUT' | 'DELETE';
+  const method = req.method as "GET" | "POST" | "PUT" | "DELETE";
 
   const routes = ScopedRoutes[scope];
   if (!routes) {
@@ -29,6 +29,9 @@ async function ApiHandler(
 const ApiRoute = {
   GET: ApiHandler,
   POST: ApiHandler,
+  PUT: ApiHandler,
+  DELETE: ApiHandler,
+  PATCH: ApiHandler,
 };
 
 export default ApiRoute;

@@ -2,6 +2,8 @@ import type { BaseDriver, BlacklistEntry, BlacklistOptions, BlacklistStats } fro
 import { BaseDriver as BaseDriverClass } from './BaseDriver';
 
 export class InMemoryDriver extends BaseDriverClass {
+  static readonly DRIVER_NAME = 'inmemory';
+  
   private entries = new Map<string, BlacklistEntry>();
 
   constructor(options: BlacklistOptions = {}) {

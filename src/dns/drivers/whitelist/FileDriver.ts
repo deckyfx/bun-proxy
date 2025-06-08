@@ -3,6 +3,8 @@ import { readFile, writeFile, mkdir } from 'fs/promises';
 import { dirname } from 'path';
 
 export class FileDriver extends BaseDriver {
+  static readonly DRIVER_NAME = 'file';
+  
   private filePath: string;
   private entries = new Map<string, WhitelistEntry>();
   private loaded = false;

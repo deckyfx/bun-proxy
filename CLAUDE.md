@@ -9,6 +9,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Run with hot reload**: `bun --hot run src/index.ts`
 - **Build Tailwind CSS**: `bun run build:tailwind`
 - **Type checking**: `bun run tsc --noEmit` (using TypeScript compiler)
+- **Test server**: `bun run test:serverhit` (starts server, tests DNS, analyzes logs)
+- **Quick DNS test**: `bun run test:hit` (tests DNS server that's already running)
 
 ## Architecture
 
@@ -87,6 +89,39 @@ After modifying any TypeScript files, ALWAYS run:
 2. **Code formatting**: Run prettier/formatter to maintain consistent code style
 
 These checks are mandatory before considering any task complete. Fix all TypeScript errors and formatting issues immediately after making changes.
+
+### Testing
+- **`bun run test:serverhit`**: Comprehensive server test that starts the dev server, runs DNS tests, and generates `./server.log` and `./client.log` for analysis
+- **`bun run test:hit`**: Quick DNS test for already running server
+- **Log analysis**: After running `test:serverhit`, analyze `./server.log` and `./client.log`, then remove them
+- **"try hit" command**: When user says "try hit", run `test:serverhit`, analyze logs, then clean up
+
+## DNS Driver System
+
+### Driver API Endpoints
+- **GET /api/dns/driver**: Returns current driver configuration and available drivers
+- **POST /api/dns/driver**: Handles driver operations with method field:
+  - `method: "SET"` - Update driver configuration (scope, driver, options)
+  - `method: "GET"` - Retrieve driver content with filtering
+
+### Driver Architecture
+- **Driver Types**: logs, cache, blacklist, whitelist
+- **Default Configuration**: 
+  - Logs: Console driver
+  - Cache/Blacklist/Whitelist: InMemory drivers
+- **Static Constants**: Each driver class has `static readonly DRIVER_NAME` property
+- **State Persistence**: DNS Manager stores last used driver configuration
+
+### Component Structure
+DNS page split into specialized components:
+- `DNSControl.tsx` - Server start/stop, port management
+- `DNSConfig.tsx` - NextDNS settings, whitelist configuration
+- `DNSDriver.tsx` - Driver selection and content management
+
+### State Management
+- **DNS Store**: Server settings, configuration, status polling
+- **Driver Store**: Driver configuration, content polling, error handling
+- **Auto-polling**: Driver content refreshes every 10 seconds when server active
 
 ## Session Journaling
 

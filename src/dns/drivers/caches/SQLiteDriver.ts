@@ -4,6 +4,8 @@ import { mkdir } from 'fs/promises';
 import { dirname } from 'path';
 
 export class SQLiteDriver<T = any> extends BaseDriver<T> {
+  static readonly DRIVER_NAME = 'sqlite';
+  
   private db!: Database;
   private dbPath: string;
   private cleanupTimer?: Timer;
