@@ -1,5 +1,5 @@
-import { jwtDecode } from 'jwt-decode';
-import { useSnackbarStore } from '@app/stores/snackbarStore';
+import { jwtDecode } from "jwt-decode";
+import { useSnackbarStore } from "@app/stores/snackbarStore";
 
 export interface ApiResponse<T = any> {
   success: boolean;
@@ -12,7 +12,6 @@ export interface FetchOptions extends RequestInit {
   showErrors?: boolean;
   showSuccess?: boolean;
   successMessage?: string;
-  bypassAuth?: boolean;
 }
 
 class FetchClient {
@@ -28,8 +27,8 @@ class FetchClient {
   }
 
   private getCookie(name: string): string | null {
-    if (typeof document === 'undefined') return null;
-    
+    if (typeof document === "undefined") return null;
+
     const matches = document.cookie.match(
       new RegExp(
         "(?:^|; )" + name.replace(/([.$?*|{}()[\]\\/+^])/g, "\\$1") + "=([^;]*)"
@@ -39,21 +38,21 @@ class FetchClient {
   }
 
   private async refreshAccessToken(): Promise<string> {
-    const refreshToken = this.getCookie('refresh_token');
+    const refreshToken = this.getCookie("refresh_token");
     if (!refreshToken) {
-      throw new Error('No refresh token available');
+      throw new Error("No refresh token available");
     }
 
-    const response = await fetch('/api/auth/refresh', {
-      method: 'POST',
+    const response = await fetch("/api/auth/refresh", {
+      method: "POST",
       headers: {
-        'Authorization': `Bearer ${refreshToken}`,
-        'Content-Type': 'application/json'
-      }
+        Authorization: `Bearer ${refreshToken}`,
+        "Content-Type": "application/json",
+      },
     });
 
     if (!response.ok) {
-      throw new Error('Failed to refresh token');
+      throw new Error("Failed to refresh token");
     }
 
     const data = await response.json();
@@ -61,8 +60,8 @@ class FetchClient {
   }
 
   private async getValidAccessToken(): Promise<string | null> {
-    let accessToken = this.getCookie('access_token');
-    
+    let accessToken = this.getCookie("access_token");
+
     if (!accessToken) {
       return null;
     }
@@ -87,7 +86,7 @@ class FetchClient {
   private async handleResponse<T>(response: Response): Promise<T> {
     if (!response.ok) {
       let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-      
+
       try {
         const errorData = await response.json();
         if (errorData.error) {
@@ -98,50 +97,45 @@ class FetchClient {
       } catch {
         // If we can't parse JSON, use the status text
       }
-      
+
       throw new Error(errorMessage);
     }
 
-    const contentType = response.headers.get('content-type');
-    if (contentType && contentType.includes('application/json')) {
+    const contentType = response.headers.get("content-type");
+    if (contentType && contentType.includes("application/json")) {
       return response.json();
     }
-    
+
     return response.text() as T;
   }
 
-  private async fetch<T = any>(url: string, options: FetchOptions = {}): Promise<T> {
+  private async fetch<T = any>(
+    url: string,
+    options: FetchOptions = {}
+  ): Promise<T> {
     const {
       showErrors = true,
       showSuccess = false,
       successMessage,
-      bypassAuth = false,
       ...fetchOptions
     } = options;
 
     try {
       let headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(fetchOptions.headers as Record<string, string> || {}),
+        "Content-Type": "application/json",
+        ...((fetchOptions.headers as Record<string, string>) || {}),
       };
 
-      // Add authentication header unless bypassed
-      if (!bypassAuth) {
-        const accessToken = await this.getValidAccessToken();
-        
-        if (!accessToken) {
-          const error = new Error('Authentication required');
-          if (showErrors) {
-            useSnackbarStore.getState().showAlert('Please log in to continue', 'Authentication Required');
-          }
-          throw error;
-        }
-
+      // Add authentication header when available
+      const accessToken = await this.getValidAccessToken();
+      
+      if (accessToken) {
         headers = {
           ...headers,
-          'Authorization': `Bearer ${accessToken}`,
+          Authorization: `Bearer ${accessToken}`,
         };
       }
+      // Don't throw error if no token - let the server decide if auth is required
 
       const response = await fetch(url, {
         ...fetchOptions,
@@ -149,48 +143,61 @@ class FetchClient {
       });
 
       const data = await this.handleResponse<T>(response);
-      
+
       if (showSuccess && successMessage) {
         useSnackbarStore.getState().showInfo(successMessage);
       }
-      
+
       return data;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Request failed';
-      
+      const errorMessage =
+        error instanceof Error ? error.message : "Request failed";
+
       if (showErrors) {
-        useSnackbarStore.getState().showAlert(errorMessage, 'Request Error');
+        useSnackbarStore.getState().showAlert(errorMessage, "Request Error");
       }
-      
+
       throw error;
     }
   }
 
   // HTTP methods - authentication included by default, use bypassAuth: true to skip
   async get<T = any>(url: string, options?: FetchOptions): Promise<T> {
-    return this.fetch<T>(url, { ...options, method: 'GET' });
+    return this.fetch<T>(url, { ...options, method: "GET" });
   }
 
-  async post<T = any, B = any>(url: string, data?: B, options?: FetchOptions): Promise<T> {
+  async post<T = any, B = any>(
+    url: string,
+    data?: B,
+    options?: FetchOptions
+  ): Promise<T> {
     return this.fetch<T>(url, {
       ...options,
-      method: 'POST',
+      method: "POST",
       body: data ? JSON.stringify(data) : undefined,
     });
   }
 
-  async put<T = any, B = any>(url: string, data?: B, options?: FetchOptions): Promise<T> {
+  async put<T = any, B = any>(
+    url: string,
+    data?: B,
+    options?: FetchOptions
+  ): Promise<T> {
     return this.fetch<T>(url, {
       ...options,
-      method: 'PUT',
+      method: "PUT",
       body: data ? JSON.stringify(data) : undefined,
     });
   }
 
-  async delete<T = any, B = any>(url: string, data?: B, options?: FetchOptions): Promise<T> {
-    return this.fetch<T>(url, { 
-      ...options, 
-      method: 'DELETE',
+  async delete<T = any, B = any>(
+    url: string,
+    data?: B,
+    options?: FetchOptions
+  ): Promise<T> {
+    return this.fetch<T>(url, {
+      ...options,
+      method: "DELETE",
       body: data ? JSON.stringify(data) : undefined,
     });
   }

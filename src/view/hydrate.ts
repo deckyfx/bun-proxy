@@ -19,6 +19,11 @@ async function HydrateRoute(
     format: "esm",
     minify: false,
     splitting: false, // Ensure single bundle
+    banner: `"use client"`,
+    footer: "/* Made in Bun */",
+    define: {
+      "process.env.DEBUG_BYPASS_AUTH": `${Config.DEBUG_BYPASS_AUTH}`,
+    },
   });
 
   if (!result.success) {

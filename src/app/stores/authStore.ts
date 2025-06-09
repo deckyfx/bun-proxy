@@ -65,7 +65,6 @@ export const useAuthStore = create<AuthState>()(
         try {
           set({ isLoading: true });
           const tokens: AuthResponse = await api.post("/api/auth/signin", payload, { 
-            bypassAuth: true,
             showErrors: false 
           });
           get().setTokens(tokens);
@@ -82,7 +81,6 @@ export const useAuthStore = create<AuthState>()(
         try {
           set({ isLoading: true });
           await api.post("/api/auth/signup", payload, { 
-            bypassAuth: true,
             showErrors: false 
           });
           return true;
@@ -103,7 +101,7 @@ export const useAuthStore = create<AuthState>()(
       },
 
       health: async (): Promise<HealthResponse> => {
-        return api.get("/api/system/health", { bypassAuth: true });
+        return api.get("/api/system/health");
       },
     }),
     {

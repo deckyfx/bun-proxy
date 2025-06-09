@@ -1,6 +1,7 @@
 import React from "react";
 import AuthRouter from "./auth/router";
 import DashboardRouter from "./dashboard/router";
+import { SSRProvider } from "./contexts/SSRContext";
 
 interface IndexProps {
   isAuthenticated: boolean;
@@ -22,14 +23,26 @@ export default function Index({ isAuthenticated }: IndexProps) {
           <link rel="stylesheet" href="/assets/styles/tailwind.css" />
         </head>
         <body className="min-h-screen bg-gray-50">
-          <div id="auth-root" style={{ display: isAuthenticated ? 'none' : 'flex' }} className="min-h-screen items-center justify-center px-4">
-            {!isAuthenticated && <AuthRouter />}
+          <div
+            id="auth-root"
+            style={{ display: isAuthenticated ? "none" : "flex" }}
+            className="min-h-screen items-center justify-center px-4"
+          >
+            {!isAuthenticated && (
+              <SSRProvider>
+                <AuthRouter />
+              </SSRProvider>
+            )}
           </div>
           <div
             id="dashboard-root"
             style={{ display: isAuthenticated ? "block" : "none" }}
           >
-            {isAuthenticated && <DashboardRouter />}
+            {isAuthenticated && (
+              <SSRProvider>
+                <DashboardRouter />
+              </SSRProvider>
+            )}
           </div>
         </body>
       </html>

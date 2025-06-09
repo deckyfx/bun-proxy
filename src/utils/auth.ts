@@ -111,11 +111,9 @@ export class AuthMiddleware {
   ) {
     return async (req: BunRequest, ...args: T): Promise<Response> => {
       const user = await this.authenticate(req);
-      console.log("fgdfdfdf", user);
       if (!user) {
         return this.createUnauthorizedResponse();
       }
-      console.log("fgdgf");
       return handler(req, user, ...args);
     };
   }
