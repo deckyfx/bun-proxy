@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "bun --hot run src/index.ts",
     "build:tailwind": "bunx @tailwindcss/cli -i ./src/app/assets/styles/styles.css -o ./src/app/assets/styles/tailwind.css",
+    "build": "bun run build:tailwind && bun build --compile --minify --outfile bun-proxy src/index.ts",
+    "build:debug": "bun run build:tailwind && bun build --compile --outfile bun-proxy-debug src/index.ts",
     "drizzle": "bunx drizzle-kit generate --dialect sqlite --schema ./src/db/schema/index.ts --out ./src/db/drizzle",
     "migrate": "bun run src/db/migrations/index.ts",
     "seed": "bun run src/db/seeds/index.ts",

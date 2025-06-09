@@ -41,3 +41,4 @@ cache_test.json
 logs_test.json
 get_driver_test.json
 set_driver_test.json
+bun-proxy
