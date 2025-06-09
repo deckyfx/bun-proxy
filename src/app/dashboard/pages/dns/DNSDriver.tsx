@@ -1,6 +1,6 @@
 import { Button, Card } from "@app/components/index";
 import { useEffect } from "react";
-import { useDriverStore } from "@app/stores/driverStore";
+import { useDnsDriverStore } from "@app/stores/dnsDriverStore";
 import LogsDriver from "./LogsDriver";
 import CacheDriver from "./CacheDriver";
 import BlacklistDriver from "./BlacklistDriver";
@@ -12,21 +12,13 @@ export default function DNSDriver() {
     loading: driversLoading,
     error: driversError,
     fetchDrivers,
-    setDriver,
     clearError
-  } = useDriverStore();
+  } = useDnsDriverStore();
 
   useEffect(() => {
     fetchDrivers();
   }, []);
 
-  const handleSetDriver = async (scope: string, driver: string) => {
-    try {
-      await setDriver(scope as any, driver);
-    } catch (error) {
-      throw error;
-    }
-  };
 
   return (
     <>
@@ -55,10 +47,10 @@ export default function DNSDriver() {
         </Card>
       ) : (
         <div className="space-y-6">
-          <LogsDriver drivers={drivers} loading={driversLoading} onSetDriver={handleSetDriver} />
-          <CacheDriver drivers={drivers} loading={driversLoading} onSetDriver={handleSetDriver} />
-          <BlacklistDriver drivers={drivers} loading={driversLoading} onSetDriver={handleSetDriver} />
-          <WhitelistDriver drivers={drivers} loading={driversLoading} onSetDriver={handleSetDriver} />
+          <LogsDriver drivers={drivers} loading={driversLoading} />
+          <CacheDriver drivers={drivers} loading={driversLoading} />
+          <BlacklistDriver drivers={drivers} loading={driversLoading} />
+          <WhitelistDriver drivers={drivers} loading={driversLoading} />
         </div>
       )}
     </>

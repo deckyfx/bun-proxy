@@ -1,16 +1,16 @@
 import { Button, Card, Select } from "@app/components/index";
 import { useState, useEffect } from "react";
-import { useDriverStore } from "@app/stores/driverStore";
+import { useDnsCacheStore } from "@app/stores/dnsCacheStore";
 import { DRIVER_TYPES } from "@src/types/driver";
 
 interface CacheDriverProps {
   drivers: any;
   loading: boolean;
-  onSetDriver: (scope: string, driver: string) => Promise<void>;
 }
 
-export default function CacheDriver({ drivers, loading, onSetDriver }: CacheDriverProps) {
+export default function CacheDriver({ drivers, loading }: CacheDriverProps) {
   const [driverForm, setDriverForm] = useState({ driver: '' });
+  const { setDriver } = useDnsCacheStore();
 
   useEffect(() => {
     if (drivers?.current?.cache) {
@@ -25,12 +25,7 @@ export default function CacheDriver({ drivers, loading, onSetDriver }: CacheDriv
   };
 
   const handleSetDriver = async () => {
-    try {
-      await onSetDriver(DRIVER_TYPES.CACHE, driverForm.driver);
-      alert(`${DRIVER_TYPES.CACHE} driver updated successfully`);
-    } catch (error) {
-      alert(`Failed to update ${DRIVER_TYPES.CACHE} driver`);
-    }
+    await setDriver(driverForm.driver);
   };
 
   const availableDrivers = drivers?.available[DRIVER_TYPES.CACHE] || [];

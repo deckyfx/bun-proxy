@@ -4,6 +4,7 @@ import {
   CloudflareProvider,
   GoogleProvider,
   OpenDNSProvider,
+  SystemProvider,
 } from "./providers";
 import config from "@src/config";
 import { ConsoleDriver } from "./drivers/logs/ConsoleDriver";
@@ -58,6 +59,7 @@ class DNSManager {
       new CloudflareProvider(),
       new GoogleProvider(),
       new OpenDNSProvider(),
+      new SystemProvider(),
     ];
 
     // Update last used drivers if provided

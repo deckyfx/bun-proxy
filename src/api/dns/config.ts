@@ -1,19 +1,25 @@
 import { dnsManager } from "@src/dns";
-import type { DNSConfigResponse } from "@typed/dns";
-import { buildDNSConfig } from "./utils";
+import config from "@src/config";
+import type { DNSConfigResponse, DNSConfig } from "@typed/dns";
 
 export async function Config(_req: any): Promise<Response> {
   try {
     const status = dnsManager.getStatus();
 
-    // Return configuration data
+    // Build DNS configuration
+    const dnsConfig: DNSConfig = {
+      port: status.server?.port || config.DNS_PORT,
+      nextdnsConfigId: dnsManager.getCurrentNextDnsConfigId(),
+      providers: status.server?.providers || ['nextdns', 'cloudflare', 'google', 'opendns', 'system'],
+      canUseLowPorts: process.getuid ? process.getuid() === 0 : false,
+      platform: process.platform,
+      isPrivilegedPort: (status.server?.port || config.DNS_PORT) < 1024,
+      enableWhitelist: false,
+      secondaryDns: 'cloudflare'
+    };
+
     const response: DNSConfigResponse = {
-      config: buildDNSConfig(
-        status.server?.port, 
-        undefined, 
-        undefined, 
-        dnsManager.getCurrentNextDnsConfigId()
-      ),
+      config: dnsConfig,
     };
 
     return new Response(JSON.stringify(response), {

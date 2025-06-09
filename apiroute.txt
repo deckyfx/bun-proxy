@@ -1,44 +1,66 @@
-API Endpoints Found in src/app/stores/*
+API Endpoints Documentation
 
-AUTH STORE (authStore.ts):
-- POST /api/auth/refresh
-- POST /api/user/me  
-- POST /api/auth/signin
-- POST /api/auth/signup
-- POST /api/auth/logout
-- GET /api/system/health
+=== AUTHENTICATION ===
+- POST /api/auth/signin - User login
+- POST /api/auth/signup - User registration
+- POST /api/auth/logout - User logout
+- POST /api/auth/refresh - Refresh JWT token
 
-DNS STORE (dnsStore.ts):
-- GET /api/dns/status
-- GET /api/dns/config
-- POST /api/dns/start
-- POST /api/dns/stop
-- POST /api/dns/toggle
-- POST /api/dns/test
-- GET /api/sse/stream (SSE - NEW UNIFIED ENDPOINT)
+=== USER MANAGEMENT ===
+- GET /api/user/me - Get current user profile
 
-DRIVER STORE (driverStore.ts):
-- GET /api/dns/driver
-- POST /api/dns/driver
-- GET /api/sse/stream (SSE - NEW UNIFIED ENDPOINT)
+=== SYSTEM ===
+- GET /api/system/health - System health check
 
-SSE ENDPOINTS:
-- GET /api/sse/stream (Unified SSE stream)
-- GET /api/sse/test (SSE test endpoint)
+=== DNS MANAGEMENT ===
+- GET /api/dns/status - Get DNS server status
+- GET /api/dns/config - Get DNS configuration
+- POST /api/dns/start - Start DNS server
+- POST /api/dns/stop - Stop DNS server
+- POST /api/dns/toggle - Toggle DNS server on/off
+- POST /api/dns/test - Test DNS resolution
 
-DIALOG STORE (dialogStore.ts):
-- No API endpoints
+=== DRIVER MANAGEMENT ===
+**General Driver Info:**
+- GET /api/dns/driver - Get all driver configurations and available drivers
 
-SNACKBAR STORE (snackbarStore.ts):
-- No API endpoints
+**Driver-Specific Endpoints:**
+- GET /api/dns/log - Get logs driver info and available options
+- POST /api/dns/log - Handle logs driver operations (SET/GET/CLEAR)
 
-VALIDATION STORE (validationStore.ts):
-- No API endpoints
+- GET /api/dns/cache - Get cache driver info and available options  
+- POST /api/dns/cache - Handle cache driver operations (SET/GET/CLEAR)
 
-REMOVED LEGACY ENDPOINTS:
-- /api/dns/events (replaced by /api/sse/stream)
+- GET /api/dns/blacklist - Get blacklist driver info and available options
+- POST /api/dns/blacklist - Handle blacklist driver operations (SET/GET/CLEAR)
 
-NEW EVENT-DRIVEN CHANNELS:
+- GET /api/dns/whitelist - Get whitelist driver info and available options
+- POST /api/dns/whitelist - Handle whitelist driver operations (SET/GET/CLEAR)
+
+=== SSE (Server-Sent Events) ===
+- GET /api/sse/stream - Unified SSE stream with channel-based routing
+- GET /api/sse/test - SSE connection test
+
+=== DRIVER OPERATIONS ===
+All driver endpoints support these POST operations:
+```json
+{
+  "method": "SET",    // Change driver implementation
+  "driver": "file",   // Driver name (console/inmemory/file/sqlite)
+  "options": {}       // Driver-specific options
+}
+
+{
+  "method": "GET",    // Retrieve driver content
+  "filter": {}        // Optional content filtering
+}
+
+{
+  "method": "CLEAR"   // Clear driver content
+}
+```
+
+=== SSE EVENT CHANNELS ===
 - dns/info - DNS configuration changes
 - dns/status - DNS server start/stop events  
 - dns/log/event - Real-time log streaming
@@ -46,6 +68,12 @@ NEW EVENT-DRIVEN CHANNELS:
 - dns/cache/ - Cache driver content updates
 - dns/blacklist/ - Blacklist driver content updates
 - dns/whitelist/ - Whitelist driver content updates
-- system/heartbeat - Connection health
+- system/heartbeat - Connection health (30s intervals)
 
-TOTAL UNIQUE API ENDPOINTS: 12 (same count, but improved architecture)
+=== AVAILABLE DRIVERS ===
+**Logs:** console, inmemory, file, sqlite
+**Cache:** inmemory, file, sqlite  
+**Blacklist:** inmemory, file, sqlite
+**Whitelist:** inmemory, file, sqlite
+
+TOTAL API ENDPOINTS: 18

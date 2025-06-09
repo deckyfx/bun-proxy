@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { PageContainer } from "../components/PageContainer";
 import { useDNSStore } from "@app/stores/dnsStore";
-import { useDriverStore } from "@app/stores/driverStore";
+import { useDnsDriverStore } from "@app/stores/dnsDriverStore";
 import DNSControl from "./dns/DNSControl";
 import DNSConfig from "./dns/DNSConfig";
 import DNSDriver from "./dns/DNSDriver";
@@ -17,9 +17,7 @@ export default function DNS() {
 
   const {
     fetchDrivers,
-    connectSSE: connectDriverSSE,
-    disconnectSSE: disconnectDriverSSE,
-  } = useDriverStore();
+  } = useDnsDriverStore();
 
   useEffect(() => {
     // Initial fetch
@@ -29,12 +27,10 @@ export default function DNS() {
 
     // Connect to SSE for real-time updates
     connectSSE();
-    connectDriverSSE();
 
     // Cleanup on unmount
     return () => {
       disconnectSSE();
-      disconnectDriverSSE();
     };
   }, []); // Empty dependency array - run only once on mount
 

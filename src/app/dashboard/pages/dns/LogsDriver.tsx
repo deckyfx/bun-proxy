@@ -2,7 +2,7 @@ import { Button, Card, Select, Table, type TableColumn } from "@app/components/i
 import { useState, useEffect } from "react";
 import { DRIVER_TYPES } from "@src/types/driver";
 import type { LogEntry } from "@src/dns/drivers/logs/BaseDriver";
-import { useDriverStore } from "@app/stores/driverStore";
+import { useDnsLogStore } from "@app/stores/dnsLogStore";
 import { useDialogStore } from "@app/stores/dialogStore";
 import { useSnackbarStore } from "@app/stores/snackbarStore";
 import { sseClient } from "@src/utils/SSEClient";
@@ -10,7 +10,6 @@ import { sseClient } from "@src/utils/SSEClient";
 interface LogsDriverProps {
   drivers: any;
   loading: boolean;
-  onSetDriver: (scope: string, driver: string) => Promise<void>;
 }
 
 const formatDriverName = (name: string): string => {
@@ -157,7 +156,7 @@ const tableColumns: TableColumn<LogEntry>[] = [
   },
 ];
 
-export default function LogsDriver({ drivers, loading, onSetDriver }: LogsDriverProps) {
+export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
   const [driverForm, setDriverForm] = useState({ driver: '' });
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [connected, setConnected] = useState(false);
@@ -171,15 +170,14 @@ export default function LogsDriver({ drivers, loading, onSetDriver }: LogsDriver
     limit: 100
   });
 
-  // Use driver store for history data
-  const { getDriverContent, driverContent, contentLoading, clearLogs } = useDriverStore();
+  // Use new logs driver store
+  const { getContent, content, contentLoading, clearContent, setDriver } = useDnsLogStore();
   const { showConfirm, showCustom } = useDialogStore();
   const { showInfo, showAlert } = useSnackbarStore();
   
-  // Get history logs from driver store
-  const driverContentData = driverContent[DRIVER_TYPES.LOGS];
-  const historyLogs = Array.isArray(driverContentData?.content) 
-    ? (driverContentData.content as LogEntry[]).map(log => ({
+  // Get history logs from logs driver store
+  const historyLogs = Array.isArray(content?.content) 
+    ? (content.content as LogEntry[]).map(log => ({
         ...log,
         timestamp: typeof log.timestamp === 'string' ? new Date(log.timestamp) : log.timestamp
       }))
@@ -229,7 +227,7 @@ export default function LogsDriver({ drivers, loading, onSetDriver }: LogsDriver
   };
 
   const handleSetDriver = async () => {
-    await onSetDriver(DRIVER_TYPES.LOGS, driverForm.driver);
+    await setDriver(driverForm.driver);
     // Success case will be handled by the driver store showing a snackbar
     // Update the form to reflect the new driver after change
     if (drivers?.current?.logs) {
@@ -244,7 +242,7 @@ export default function LogsDriver({ drivers, loading, onSetDriver }: LogsDriver
     setLogs([]);
     
     // Clear persistent logs using the store
-    await clearLogs();
+    await clearContent();
   };
 
   // Handler for row clicks - show details for response logs
@@ -498,7 +496,7 @@ export default function LogsDriver({ drivers, loading, onSetDriver }: LogsDriver
         limit: filters.limit
       };
 
-      await getDriverContent(DRIVER_TYPES.LOGS, filterConfig);
+      await getContent(filterConfig);
     } catch (error) {
       // Error handling is now done in the store, but add safety net
       console.error('Error in fetchLogHistory:', error);
