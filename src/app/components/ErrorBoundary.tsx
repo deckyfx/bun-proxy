@@ -35,7 +35,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
 
       return (
         <div className="min-h-screen flex items-center justify-center bg-gray-50">
-          <div className="max-w-md w-full bg-white shadow-lg rounded-lg p-6">
+          <div className="w-4/5 bg-white shadow-lg rounded-lg p-6">
             <div className="flex items-center mb-4">
               <span className="material-icons text-red-500 text-2xl mr-3">error</span>
               <h1 className="text-xl font-semibold text-gray-900">Something went wrong</h1>

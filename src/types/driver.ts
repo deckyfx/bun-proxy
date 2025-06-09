@@ -9,7 +9,12 @@ export const DRIVER_TYPES = {
 export const DRIVER_METHODS = {
   SET: 'SET',
   GET: 'GET',
-  CLEAR: 'CLEAR'
+  CLEAR: 'CLEAR',
+  ADD: 'ADD',
+  REMOVE: 'REMOVE',
+  UPDATE: 'UPDATE',
+  IMPORT: 'IMPORT',
+  EXPORT: 'EXPORT'
 } as const;
 
 export type DriverType = typeof DRIVER_TYPES[keyof typeof DRIVER_TYPES];
@@ -21,6 +26,23 @@ export interface DriverConfig {
   driver?: string;
   options?: Record<string, any>;
   filter?: Record<string, any>;
+  
+  // For CRUD operations
+  key?: string;           // Cache key or domain for blacklist/whitelist
+  value?: any;            // Cache value or entry data
+  ttl?: number;           // Cache TTL
+  reason?: string;        // Reason for blacklist/whitelist entry
+  category?: string;      // Category for blacklist/whitelist entry
+  
+  // For bulk operations
+  entries?: Array<{
+    key?: string;
+    value?: any;
+    domain?: string;
+    reason?: string;
+    category?: string;
+    ttl?: number;
+  }>;
 }
 
 export interface DriverStatus {

@@ -43,6 +43,24 @@ export default Bun.serve({
     "/": IndexRoute,
     "/hydrate": HydrateRoute,
     "/api/:scope/:command": ApiRoute,
+    "/favicon.ico": {
+      GET: async () => {
+        try {
+          const file = Bun.file("./src/app/assets/favicon.ico");
+          if (await file.exists()) {
+            return new Response(file, {
+              headers: {
+                "Content-Type": "image/x-icon",
+                "Cache-Control": "public, max-age=86400",
+              },
+            });
+          }
+        } catch (error) {
+          console.error("Favicon serving error:", error);
+        }
+        return new Response("Favicon not found", { status: 404 });
+      },
+    },
     "/assets/*": {
       GET: async (req: Request) => {
         const url = new URL(req.url);

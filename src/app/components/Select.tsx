@@ -14,7 +14,6 @@ interface SelectProps {
   disabled?: boolean;
   label?: string;
   description?: string;
-  placeholder?: string;
   className?: string;
 }
 
@@ -24,8 +23,7 @@ export function Select({
   onChange, 
   disabled = false, 
   label, 
-  description, 
-  placeholder = 'Select an option',
+  description,
   className = '' 
 }: SelectProps) {
   return (

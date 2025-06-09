@@ -38,6 +38,21 @@ export class InMemoryDriver extends BaseDriver {
       if (filter.provider) {
         filtered = filtered.filter(log => (log.type === 'request' || log.type === 'response') && 'provider' in log && log.provider === filter.provider);
       }
+      if (filter.success !== undefined) {
+        filtered = filtered.filter(log => log.type === 'response' && log.success === filter.success);
+      }
+      if (filter.cached !== undefined) {
+        filtered = filtered.filter(log => (log.type === 'request' || log.type === 'response') && log.cached === filter.cached);
+      }
+      if (filter.blocked !== undefined) {
+        filtered = filtered.filter(log => (log.type === 'request' || log.type === 'response') && log.blocked === filter.blocked);
+      }
+      if (filter.whitelisted !== undefined) {
+        filtered = filtered.filter(log => (log.type === 'request' || log.type === 'response') && log.whitelisted === filter.whitelisted);
+      }
+      if (filter.clientIP) {
+        filtered = filtered.filter(log => (log.type === 'request' || log.type === 'response') && log.query.clientIP === filter.clientIP);
+      }
       if (filter.startTime) {
         filtered = filtered.filter(log => log.timestamp >= filter.startTime!);
       }

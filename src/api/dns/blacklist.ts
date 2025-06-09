@@ -33,7 +33,7 @@ export async function GetBlacklistDriverInfo(_req: Request): Promise<Response> {
   }
 }
 
-// POST /api/dns/blacklist - Handle blacklist driver operations (SET/GET/CLEAR)
+// POST /api/dns/blacklist - Handle blacklist driver operations
 export async function HandleBlacklistDriverOperation(req: Request): Promise<Response> {
   try {
     const body = await req.json() as DriverConfig;
@@ -44,14 +44,25 @@ export async function HandleBlacklistDriverOperation(req: Request): Promise<Resp
 
     const config = { ...body, scope: DRIVER_TYPES.BLACKLIST };
 
-    if (config.method === DRIVER_METHODS.SET) {
-      return await setBlacklistDriver(config);
-    } else if (config.method === DRIVER_METHODS.GET) {
-      return await getBlacklistDriverContent(config);
-    } else if (config.method === DRIVER_METHODS.CLEAR) {
-      return await clearBlacklistDriver(config);
-    } else {
-      return createErrorResponse('Invalid method', 'method must be SET, GET, or CLEAR', 400);
+    switch (config.method) {
+      case DRIVER_METHODS.SET:
+        return await setBlacklistDriver(config);
+      case DRIVER_METHODS.GET:
+        return await getBlacklistDriverContent(config);
+      case DRIVER_METHODS.CLEAR:
+        return await clearBlacklistDriver(config);
+      case DRIVER_METHODS.ADD:
+        return await addBlacklistEntry(config);
+      case DRIVER_METHODS.REMOVE:
+        return await removeBlacklistEntry(config);
+      case DRIVER_METHODS.UPDATE:
+        return await updateBlacklistEntry(config);
+      case DRIVER_METHODS.IMPORT:
+        return await importBlacklistEntries(config);
+      case DRIVER_METHODS.EXPORT:
+        return await exportBlacklistEntries(config);
+      default:
+        return createErrorResponse('Invalid method', 'method must be SET, GET, CLEAR, ADD, REMOVE, UPDATE, IMPORT, or EXPORT', 400);
     }
   } catch (error) {
     return createErrorResponse(
@@ -109,10 +120,34 @@ async function getBlacklistDriverContent(config: DriverConfig): Promise<Response
     const blacklistDriver = drivers.blacklist;
     let content: any = null;
     
-    if (blacklistDriver && typeof blacklistDriver.getAll === 'function') {
-      content = await blacklistDriver.getAll();
+    if (blacklistDriver) {
+      if (config.key) {
+        // Get specific domain check
+        content = await blacklistDriver.contains(config.key);
+      } else {
+        // Get all entries
+        const category = config.filter?.category;
+        content = await blacklistDriver.list(category);
+        
+        // Apply additional filtering if specified
+        if (config.filter) {
+          if (config.filter.domain) {
+            content = content.filter((entry: any) => 
+              entry.domain.toLowerCase().includes(config.filter!.domain.toLowerCase())
+            );
+          }
+          if (config.filter.source) {
+            content = content.filter((entry: any) => entry.source === config.filter!.source);
+          }
+          if (config.filter.reason) {
+            content = content.filter((entry: any) => 
+              entry.reason && entry.reason.toLowerCase().includes(config.filter!.reason.toLowerCase())
+            );
+          }
+        }
+      }
     } else {
-      content = 'Blacklist driver does not support content retrieval';
+      content = 'Blacklist driver not available';
     }
 
     const response: DriverContentResponse = {
@@ -169,6 +204,179 @@ async function clearBlacklistDriver(config: DriverConfig): Promise<Response> {
   } catch (error) {
     return createErrorResponse(
       'Failed to clear blacklist driver',
+      error instanceof Error ? error.message : 'Unknown error'
+    );
+  }
+}
+
+async function addBlacklistEntry(config: DriverConfig): Promise<Response> {
+  const serverError = checkServerAvailability();
+  if (serverError) return serverError;
+
+  if (!config.key) {
+    return createErrorResponse('Missing required field', 'key (domain) is required for ADD method', 400);
+  }
+
+  try {
+    const drivers = getDrivers();
+    const blacklistDriver = drivers.blacklist;
+
+    if (!blacklistDriver || typeof blacklistDriver.add !== 'function') {
+      return createErrorResponse('Blacklist driver not available', 'Blacklist driver does not support adding entries');
+    }
+
+    await blacklistDriver.add(config.key, config.reason, config.category);
+
+    return createSuccessResponse({
+      message: `Domain added to blacklist successfully`,
+      domain: config.key,
+      reason: config.reason,
+      category: config.category,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    return createErrorResponse(
+      'Failed to add blacklist entry',
+      error instanceof Error ? error.message : 'Unknown error'
+    );
+  }
+}
+
+async function removeBlacklistEntry(config: DriverConfig): Promise<Response> {
+  const serverError = checkServerAvailability();
+  if (serverError) return serverError;
+
+  if (!config.key) {
+    return createErrorResponse('Missing required field', 'key (domain) is required for REMOVE method', 400);
+  }
+
+  try {
+    const drivers = getDrivers();
+    const blacklistDriver = drivers.blacklist;
+
+    if (!blacklistDriver || typeof blacklistDriver.remove !== 'function') {
+      return createErrorResponse('Blacklist driver not available', 'Blacklist driver does not support removing entries');
+    }
+
+    const removed = await blacklistDriver.remove(config.key);
+
+    return createSuccessResponse({
+      message: removed ? `Domain removed from blacklist successfully` : `Domain not found in blacklist`,
+      domain: config.key,
+      removed,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    return createErrorResponse(
+      'Failed to remove blacklist entry',
+      error instanceof Error ? error.message : 'Unknown error'
+    );
+  }
+}
+
+async function updateBlacklistEntry(config: DriverConfig): Promise<Response> {
+  const serverError = checkServerAvailability();
+  if (serverError) return serverError;
+
+  if (!config.key) {
+    return createErrorResponse('Missing required field', 'key (domain) is required for UPDATE method', 400);
+  }
+
+  try {
+    const drivers = getDrivers();
+    const blacklistDriver = drivers.blacklist;
+
+    if (!blacklistDriver || typeof blacklistDriver.contains !== 'function' || typeof blacklistDriver.remove !== 'function' || typeof blacklistDriver.add !== 'function') {
+      return createErrorResponse('Blacklist driver not available', 'Blacklist driver does not support updating entries');
+    }
+
+    const exists = await blacklistDriver.contains(config.key);
+    if (!exists) {
+      return createErrorResponse('Entry not found', `Domain '${config.key}' is not in the blacklist`, 404);
+    }
+
+    // Remove and re-add with new values
+    await blacklistDriver.remove(config.key);
+    await blacklistDriver.add(config.key, config.reason, config.category);
+
+    return createSuccessResponse({
+      message: `Blacklist entry updated successfully`,
+      domain: config.key,
+      reason: config.reason,
+      category: config.category,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    return createErrorResponse(
+      'Failed to update blacklist entry',
+      error instanceof Error ? error.message : 'Unknown error'
+    );
+  }
+}
+
+async function importBlacklistEntries(config: DriverConfig): Promise<Response> {
+  const serverError = checkServerAvailability();
+  if (serverError) return serverError;
+
+  if (!config.entries || !Array.isArray(config.entries)) {
+    return createErrorResponse('Missing required field', 'entries array is required for IMPORT method', 400);
+  }
+
+  try {
+    const drivers = getDrivers();
+    const blacklistDriver = drivers.blacklist;
+
+    if (!blacklistDriver || typeof blacklistDriver.import !== 'function') {
+      return createErrorResponse('Blacklist driver not available', 'Blacklist driver does not support importing entries');
+    }
+
+    const entriesWithDefaults = config.entries.map(entry => ({
+      domain: entry.domain || entry.key || '',
+      reason: entry.reason || 'Imported entry',
+      addedAt: new Date(),
+      source: 'import' as const,
+      category: entry.category || 'imported'
+    }));
+
+    const imported = await blacklistDriver.import(entriesWithDefaults);
+
+    return createSuccessResponse({
+      message: `Successfully imported ${imported} blacklist entries`,
+      imported,
+      total: config.entries.length,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    return createErrorResponse(
+      'Failed to import blacklist entries',
+      error instanceof Error ? error.message : 'Unknown error'
+    );
+  }
+}
+
+async function exportBlacklistEntries(config: DriverConfig): Promise<Response> {
+  const serverError = checkServerAvailability();
+  if (serverError) return serverError;
+
+  try {
+    const drivers = getDrivers();
+    const blacklistDriver = drivers.blacklist;
+
+    if (!blacklistDriver || typeof blacklistDriver.export !== 'function') {
+      return createErrorResponse('Blacklist driver not available', 'Blacklist driver does not support exporting entries');
+    }
+
+    const entries = await blacklistDriver.export();
+
+    return createSuccessResponse({
+      message: `Successfully exported ${entries.length} blacklist entries`,
+      entries,
+      count: entries.length,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    return createErrorResponse(
+      'Failed to export blacklist entries',
       error instanceof Error ? error.message : 'Unknown error'
     );
   }

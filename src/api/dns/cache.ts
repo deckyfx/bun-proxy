@@ -33,7 +33,7 @@ export async function GetCacheDriverInfo(_req: Request): Promise<Response> {
   }
 }
 
-// POST /api/dns/cache - Handle cache driver operations (SET/GET/CLEAR)
+// POST /api/dns/cache - Handle cache driver operations
 export async function HandleCacheDriverOperation(req: Request): Promise<Response> {
   try {
     const body = await req.json() as DriverConfig;
@@ -44,14 +44,21 @@ export async function HandleCacheDriverOperation(req: Request): Promise<Response
 
     const config = { ...body, scope: DRIVER_TYPES.CACHE };
 
-    if (config.method === DRIVER_METHODS.SET) {
-      return await setCacheDriver(config);
-    } else if (config.method === DRIVER_METHODS.GET) {
-      return await getCacheDriverContent(config);
-    } else if (config.method === DRIVER_METHODS.CLEAR) {
-      return await clearCacheDriver(config);
-    } else {
-      return createErrorResponse('Invalid method', 'method must be SET, GET, or CLEAR', 400);
+    switch (config.method) {
+      case DRIVER_METHODS.SET:
+        return await setCacheDriver(config);
+      case DRIVER_METHODS.GET:
+        return await getCacheDriverContent(config);
+      case DRIVER_METHODS.CLEAR:
+        return await clearCacheDriver(config);
+      case DRIVER_METHODS.ADD:
+        return await addCacheEntry(config);
+      case DRIVER_METHODS.REMOVE:
+        return await removeCacheEntry(config);
+      case DRIVER_METHODS.UPDATE:
+        return await updateCacheEntry(config);
+      default:
+        return createErrorResponse('Invalid method', 'method must be SET, GET, CLEAR, ADD, REMOVE, or UPDATE', 400);
     }
   } catch (error) {
     return createErrorResponse(
@@ -109,10 +116,35 @@ async function getCacheDriverContent(config: DriverConfig): Promise<Response> {
     const cacheDriver = drivers.cache;
     let content: any = null;
     
-    if (cacheDriver && typeof cacheDriver.getAll === 'function') {
-      content = await cacheDriver.getAll();
+    if (cacheDriver) {
+      if (config.key) {
+        // Get specific entry
+        content = await cacheDriver.get(config.key);
+      } else {
+        // Get all entries
+        const keys = await cacheDriver.keys();
+        const entries = await Promise.all(
+          keys.map(async (key: string) => ({
+            key,
+            value: await cacheDriver.get(key)
+          }))
+        );
+        
+        // Apply filtering if specified
+        let filtered = entries.filter(entry => entry.value !== null);
+        
+        if (config.filter) {
+          if (config.filter.key) {
+            filtered = filtered.filter(entry => 
+              entry.key.toLowerCase().includes(config.filter!.key.toLowerCase())
+            );
+          }
+        }
+        
+        content = filtered;
+      }
     } else {
-      content = 'Cache driver does not support content retrieval';
+      content = 'Cache driver not available';
     }
 
     const response: DriverContentResponse = {
@@ -121,7 +153,7 @@ async function getCacheDriverContent(config: DriverConfig): Promise<Response> {
       driver: drivers.cache?.constructor.DRIVER_NAME || 'unknown',
       content,
       metadata: {
-        total: Object.keys(content || {}).length,
+        total: Array.isArray(content) ? content.length : 0,
         timestamp: new Date().toISOString()
       }
     };
@@ -169,6 +201,109 @@ async function clearCacheDriver(config: DriverConfig): Promise<Response> {
   } catch (error) {
     return createErrorResponse(
       'Failed to clear cache driver',
+      error instanceof Error ? error.message : 'Unknown error'
+    );
+  }
+}
+
+async function addCacheEntry(config: DriverConfig): Promise<Response> {
+  const serverError = checkServerAvailability();
+  if (serverError) return serverError;
+
+  if (!config.key || config.value === undefined) {
+    return createErrorResponse('Missing required fields', 'key and value are required for ADD method', 400);
+  }
+
+  try {
+    const drivers = getDrivers();
+    const cacheDriver = drivers.cache;
+
+    if (!cacheDriver || typeof cacheDriver.set !== 'function') {
+      return createErrorResponse('Cache driver not available', 'Cache driver does not support adding entries');
+    }
+
+    await cacheDriver.set(config.key, config.value, config.ttl);
+
+    return createSuccessResponse({
+      message: `Cache entry added successfully`,
+      key: config.key,
+      value: config.value,
+      ttl: config.ttl,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    return createErrorResponse(
+      'Failed to add cache entry',
+      error instanceof Error ? error.message : 'Unknown error'
+    );
+  }
+}
+
+async function removeCacheEntry(config: DriverConfig): Promise<Response> {
+  const serverError = checkServerAvailability();
+  if (serverError) return serverError;
+
+  if (!config.key) {
+    return createErrorResponse('Missing required field', 'key is required for REMOVE method', 400);
+  }
+
+  try {
+    const drivers = getDrivers();
+    const cacheDriver = drivers.cache;
+
+    if (!cacheDriver || typeof cacheDriver.delete !== 'function') {
+      return createErrorResponse('Cache driver not available', 'Cache driver does not support removing entries');
+    }
+
+    const deleted = await cacheDriver.delete(config.key);
+
+    return createSuccessResponse({
+      message: deleted ? `Cache entry removed successfully` : `Cache entry not found`,
+      key: config.key,
+      deleted,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    return createErrorResponse(
+      'Failed to remove cache entry',
+      error instanceof Error ? error.message : 'Unknown error'
+    );
+  }
+}
+
+async function updateCacheEntry(config: DriverConfig): Promise<Response> {
+  const serverError = checkServerAvailability();
+  if (serverError) return serverError;
+
+  if (!config.key || config.value === undefined) {
+    return createErrorResponse('Missing required fields', 'key and value are required for UPDATE method', 400);
+  }
+
+  try {
+    const drivers = getDrivers();
+    const cacheDriver = drivers.cache;
+
+    if (!cacheDriver || typeof cacheDriver.set !== 'function' || typeof cacheDriver.has !== 'function') {
+      return createErrorResponse('Cache driver not available', 'Cache driver does not support updating entries');
+    }
+
+    const exists = await cacheDriver.has(config.key);
+    if (!exists) {
+      return createErrorResponse('Entry not found', `Cache entry with key '${config.key}' does not exist`, 404);
+    }
+
+    await cacheDriver.set(config.key, config.value, config.ttl);
+
+    return createSuccessResponse({
+      message: `Cache entry updated successfully`,
+      key: config.key,
+      value: config.value,
+      ttl: config.ttl,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    return createErrorResponse(
+      'Failed to update cache entry',
       error instanceof Error ? error.message : 'Unknown error'
     );
   }
