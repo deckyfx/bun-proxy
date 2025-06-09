@@ -9,7 +9,7 @@ import Config from "@src/config";
 async function IndexSSR(req: Bun.BunRequest<"/">): Promise<Response> {
   const token = getAccessTokenFromRequest(req);
   const user = token ? verifyAccessToken<UserType>(token) : null;
-  const isAuthenticated = !!user || Config.DEBUG_ALWAYS_LOGIN;
+  const isAuthenticated = !!user || Config.DEBUG_BYPASS_AUTH;
 
   const stream = await renderToReadableStream(
     React.createElement(Index, { isAuthenticated }),

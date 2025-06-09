@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { jwtDecode } from 'jwt-decode';
+import { api } from '@app/utils/fetchUtils';
 import type { 
   AuthResponse, 
   LoginRequest, 
@@ -30,10 +30,6 @@ interface AuthState {
   me: () => Promise<void>;
   health: () => Promise<HealthResponse>;
   
-  // Helper methods
-  getCookie: (name: string) => string | null;
-  refreshToken: () => Promise<string>;
-  fetchWithAuth: (url: string, options?: RequestInit) => Promise<Response>;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -51,63 +47,14 @@ export const useAuthStore = create<AuthState>()(
         set({ tokens: null, user: null });
       },
 
-      getCookie: (name: string): string | null => {
-        const matches = document.cookie.match(
-          new RegExp(
-            "(?:^|; )" + name.replace(/([.$?*|{}()[\]\\/+^])/g, "\\$1") + "=([^;]*)"
-          )
-        );
-        return matches ? decodeURIComponent(matches[1]!) : null;
-      },
-
-      refreshToken: async (): Promise<string> => {
-        const { tokens, setTokens } = get();
-        const res = await fetch("/api/auth/refresh", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${tokens?.refreshToken}` },
-        });
-        if (!res.ok) throw new Error("Failed to refresh");
-        const data: AuthResponse = await res.json();
-        setTokens(data);
-        return data.accessToken;
-      },
-
-      fetchWithAuth: async (url: string, options: RequestInit = {}): Promise<Response> => {
-        const { tokens, refreshToken } = get();
-        let accessToken = tokens?.accessToken;
-
-        try {
-          const { exp } = jwtDecode<{ exp: number }>(accessToken || "");
-          if (Date.now() >= exp * 1000) {
-            accessToken = await refreshToken();
-          }
-        } catch {
-          accessToken = await refreshToken();
-        }
-
-        return fetch(url, {
-          ...options,
-          headers: {
-            ...options.headers,
-            Authorization: `Bearer ${accessToken}`,
-          },
-        });
-      },
 
       me: async (): Promise<void> => {
-        const { getCookie, clearTokens } = get();
         try {
           set({ isLoading: true });
-          const accessToken = getCookie("access_token");
-          if (!accessToken) {
-            return;
-          }
-          const res = await fetch("/api/user/me", { method: "POST" });
-          if (!res.ok) throw new Error(await res.text());
-          const user: UserProfile = await res.json();
+          const user: UserProfile = await api.post("/api/user/me", undefined, { showErrors: false });
           set({ user });
         } catch (err: any) {
-          clearTokens();
+          get().clearTokens();
           window.location.reload();
         } finally {
           set({ isLoading: false });
@@ -117,13 +64,10 @@ export const useAuthStore = create<AuthState>()(
       signin: async (payload: LoginRequest): Promise<boolean> => {
         try {
           set({ isLoading: true });
-          const res = await fetch("/api/auth/signin", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
+          const tokens: AuthResponse = await api.post("/api/auth/signin", payload, { 
+            bypassAuth: true,
+            showErrors: false 
           });
-          if (!res.ok) throw new Error(await res.text());
-          const tokens: AuthResponse = await res.json();
           get().setTokens(tokens);
           window.location.reload();
           return true;
@@ -137,12 +81,10 @@ export const useAuthStore = create<AuthState>()(
       signup: async (payload: SignupRequest): Promise<boolean> => {
         try {
           set({ isLoading: true });
-          const res = await fetch("/api/auth/signup", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
+          await api.post("/api/auth/signup", payload, { 
+            bypassAuth: true,
+            showErrors: false 
           });
-          if (!res.ok) throw new Error(await res.text());
           return true;
         } catch (err: any) {
           throw new Error(err.message || "Registration failed");
@@ -153,7 +95,7 @@ export const useAuthStore = create<AuthState>()(
 
       logout: async (): Promise<void> => {
         try {
-          await fetch("/api/auth/logout", { method: "POST" });
+          await api.post("/api/auth/logout", undefined, { showErrors: false });
         } finally {
           get().clearTokens();
           window.location.reload();
@@ -161,9 +103,7 @@ export const useAuthStore = create<AuthState>()(
       },
 
       health: async (): Promise<HealthResponse> => {
-        const res = await fetch("/api/system/health");
-        if (!res.ok) throw new Error("Health check failed");
-        return res.json();
+        return api.get("/api/system/health", { bypassAuth: true });
       },
     }),
     {

@@ -1,15 +1,16 @@
 import { Button, Card, Select } from "@app/components/index";
 import { useState, useEffect } from "react";
 import { DRIVER_TYPES } from "@src/types/driver";
+import { useDnsWhitelistStore } from "@app/stores/dnsWhitelistStore";
 
 interface WhitelistDriverProps {
   drivers: any;
   loading: boolean;
-  onSetDriver: (scope: string, driver: string) => Promise<void>;
 }
 
-export default function WhitelistDriver({ drivers, loading, onSetDriver }: WhitelistDriverProps) {
+export default function WhitelistDriver({ drivers, loading }: WhitelistDriverProps) {
   const [driverForm, setDriverForm] = useState({ driver: '' });
+  const { setDriver } = useDnsWhitelistStore();
 
   useEffect(() => {
     if (drivers?.current?.whitelist) {
@@ -25,10 +26,9 @@ export default function WhitelistDriver({ drivers, loading, onSetDriver }: White
 
   const handleSetDriver = async () => {
     try {
-      await onSetDriver(DRIVER_TYPES.WHITELIST, driverForm.driver);
-      alert(`${DRIVER_TYPES.WHITELIST} driver updated successfully`);
+      await setDriver(driverForm.driver);
     } catch (error) {
-      alert(`Failed to update ${DRIVER_TYPES.WHITELIST} driver`);
+      // Error handling is done in the store
     }
   };
 

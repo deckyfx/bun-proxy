@@ -1,15 +1,16 @@
 import { Button, Card, Select } from "@app/components/index";
 import { useState, useEffect } from "react";
 import { DRIVER_TYPES } from "@src/types/driver";
+import { useDnsBlacklistStore } from "@app/stores/dnsBlacklistStore";
 
 interface BlacklistDriverProps {
   drivers: any;
   loading: boolean;
-  onSetDriver: (scope: string, driver: string) => Promise<void>;
 }
 
-export default function BlacklistDriver({ drivers, loading, onSetDriver }: BlacklistDriverProps) {
+export default function BlacklistDriver({ drivers, loading }: BlacklistDriverProps) {
   const [driverForm, setDriverForm] = useState({ driver: '' });
+  const { setDriver } = useDnsBlacklistStore();
 
   useEffect(() => {
     if (drivers?.current?.blacklist) {
@@ -25,10 +26,9 @@ export default function BlacklistDriver({ drivers, loading, onSetDriver }: Black
 
   const handleSetDriver = async () => {
     try {
-      await onSetDriver(DRIVER_TYPES.BLACKLIST, driverForm.driver);
-      alert(`${DRIVER_TYPES.BLACKLIST} driver updated successfully`);
+      await setDriver(driverForm.driver);
     } catch (error) {
-      alert(`Failed to update ${DRIVER_TYPES.BLACKLIST} driver`);
+      // Error handling is done in the store
     }
   };
 

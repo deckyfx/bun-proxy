@@ -1,4 +1,5 @@
 import { dnsManager } from "@src/dns/manager";
+import { Auth, type AuthUser } from "@utils/auth";
 import {
   DRIVER_TYPES,
   type AvailableDrivers,
@@ -64,7 +65,7 @@ function getAvailableDrivers(): AvailableDrivers {
 
 
 // GET /api/dns/driver - Get current driver configuration and available drivers
-export async function GetDriverConfiguration(_req: Request): Promise<Response> {
+export async function GetDriverConfiguration(_req: Request, _user: AuthUser): Promise<Response> {
   try {
     const current = getCurrentDriverStatus();
     const available = getAvailableDrivers();
@@ -91,6 +92,6 @@ export async function GetDriverConfiguration(_req: Request): Promise<Response> {
 
 export default {
   driver: { 
-    GET: GetDriverConfiguration
+    GET: Auth.guard(GetDriverConfiguration)
   },
 };

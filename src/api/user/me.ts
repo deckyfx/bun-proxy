@@ -1,20 +1,12 @@
-import { getAccessTokenFromRequest, verifyAccessToken } from "@utils/auth";
-
-import { type UserType } from "@db/schema";
+import { Auth, type AuthUser } from "@utils/auth";
 
 export async function Me(
-  req: Bun.BunRequest<"/api/:scope/:command">
+  req: Bun.BunRequest<"/api/:scope/:command">,
+  user: AuthUser
 ): Promise<Response> {
-  const token = getAccessTokenFromRequest(req);
-  const user = token ? verifyAccessToken<UserType>(token) : null;
-  if (!user) {
-    const cookies = req.cookies;
-    cookies.set("access_token", "");
-    return new Response("Unauthorized", { status: 401 });
-  }
   return Response.json(user);
 }
 
 export default {
-  me: { GET: Me, POST: Me },
+  me: { GET: Auth.guard(Me), POST: Auth.guard(Me) },
 };

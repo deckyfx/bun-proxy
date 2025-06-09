@@ -1,7 +1,8 @@
 import { dnsManager } from "@src/dns";
+import { Auth, type AuthUser } from "@utils/auth";
 import type { DNSStatus } from "@typed/dns";
 
-export async function Status(_req: any): Promise<Response> {
+export async function Status(_req: any, _user: AuthUser): Promise<Response> {
   try {
     const status = dnsManager.getStatus();
 
@@ -25,5 +26,5 @@ export async function Status(_req: any): Promise<Response> {
 }
 
 export default {
-  status: { GET: Status },
+  status: { GET: Auth.guard(Status) },
 };

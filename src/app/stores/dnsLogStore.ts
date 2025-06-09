@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { DRIVER_METHODS, type DriverConfig, type DriverContentResponse } from '@src/types/driver';
 import { useSnackbarStore } from './snackbarStore';
 import { sseClient } from '@src/utils/SSEClient';
+import { api } from '@app/utils/fetchUtils';
 
 interface DnsLogStore {
   // State
@@ -39,29 +40,12 @@ export const useDnsLogStore = create<DnsLogStore>((set, get) => ({
     set({ loading: true, error: null });
     
     try {
-      const response = await fetch('/api/dns/log');
-      
-      if (!response.ok) {
-        let errorMessage = 'Failed to fetch logs driver info';
-        try {
-          const errorData = await response.json();
-          if (errorData.error) {
-            errorMessage = errorData.error;
-          }
-        } catch {
-          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-        }
-        useSnackbarStore.getState().showAlert(errorMessage, 'Logs Driver Error');
-        return;
-      }
-      
-      const data = await response.json();
+      const data = await api.get('/api/dns/log');
       set({ driverInfo: data });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to fetch logs driver info';
       set({ error: errorMessage });
       console.error('Failed to fetch logs driver info:', error);
-      useSnackbarStore.getState().showAlert(errorMessage, 'Logs Driver Error');
     } finally {
       set({ loading: false });
     }
@@ -76,27 +60,7 @@ export const useDnsLogStore = create<DnsLogStore>((set, get) => ({
         filter
       };
 
-      const response = await fetch('/api/dns/log', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config),
-      });
-      
-      if (!response.ok) {
-        let errorMessage = 'Failed to get logs content';
-        try {
-          const errorData = await response.json();
-          if (errorData.error) {
-            errorMessage = errorData.error;
-          }
-        } catch {
-          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-        }
-        useSnackbarStore.getState().showAlert(errorMessage, 'Logs Content Error');
-        return;
-      }
-      
-      const data: DriverContentResponse = await response.json();
+      const data: DriverContentResponse = await api.post('/api/dns/log', config);
       set({ content: data });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to get logs content';
@@ -118,30 +82,13 @@ export const useDnsLogStore = create<DnsLogStore>((set, get) => ({
         options
       };
 
-      const response = await fetch('/api/dns/log', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config),
+      await api.post('/api/dns/log', config, {
+        showSuccess: true,
+        successMessage: 'Logs driver updated successfully'
       });
-      
-      if (!response.ok) {
-        let errorMessage = 'Failed to set logs driver';
-        try {
-          const errorData = await response.json();
-          if (errorData.error) {
-            errorMessage = errorData.error;
-          }
-        } catch {
-          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-        }
-        useSnackbarStore.getState().showAlert(errorMessage, 'Logs Driver Error');
-        return;
-      }
       
       // Refresh driver info after successful change
       await get().fetchDriverInfo();
-      
-      useSnackbarStore.getState().showInfo('Logs driver updated successfully');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to set logs driver';
       set({ error: errorMessage });
@@ -160,30 +107,13 @@ export const useDnsLogStore = create<DnsLogStore>((set, get) => ({
         method: DRIVER_METHODS.CLEAR
       };
 
-      const response = await fetch('/api/dns/log', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config),
+      await api.post('/api/dns/log', config, {
+        showSuccess: true,
+        successMessage: 'Logs cleared successfully'
       });
-      
-      if (!response.ok) {
-        let errorMessage = 'Failed to clear logs';
-        try {
-          const errorData = await response.json();
-          if (errorData.error) {
-            errorMessage = errorData.error;
-          }
-        } catch {
-          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-        }
-        useSnackbarStore.getState().showAlert(errorMessage, 'Clear Logs Error');
-        return;
-      }
       
       // Clear the content in the store after successful API call
       set({ content: null });
-      
-      useSnackbarStore.getState().showInfo('Logs cleared successfully');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to clear logs';
       set({ error: errorMessage });

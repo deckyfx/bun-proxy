@@ -1,8 +1,9 @@
 import { dnsManager } from "@src/dns";
 import config from "@src/config";
+import { Auth, type AuthUser } from "@utils/auth";
 import type { DNSActionResponse } from "@typed/dns";
 
-export async function Start(req: any): Promise<Response> {
+export async function Start(req: any, _user: AuthUser): Promise<Response> {
   try {
     let port = config.DNS_PORT;
     let enableWhitelist = false;
@@ -62,5 +63,5 @@ export async function Start(req: any): Promise<Response> {
 }
 
 export default {
-  start: { POST: Start },
+  start: { POST: Auth.guard(Start) },
 };

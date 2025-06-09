@@ -1,4 +1,5 @@
 import { dnsManager } from "@src/dns/manager";
+import { Auth, type AuthUser } from "@utils/auth";
 import { DRIVER_TYPES, DRIVER_METHODS, type DriverConfig, type DriverContentResponse } from "@src/types/driver";
 import { 
   createLogsDriverInstance, 
@@ -10,7 +11,7 @@ import {
 } from "./utils";
 
 // GET /api/dns/log - Get logs driver configuration
-export async function GetLogsDriverInfo(_req: Request): Promise<Response> {
+export async function GetLogsDriverInfo(_req: Request, _user: AuthUser): Promise<Response> {
   try {
     const drivers = getDrivers();
     const serverRunning = isServerRunning();
@@ -34,7 +35,7 @@ export async function GetLogsDriverInfo(_req: Request): Promise<Response> {
 }
 
 // POST /api/dns/log - Handle logs driver operations (SET/GET/CLEAR)
-export async function HandleLogsDriverOperation(req: Request): Promise<Response> {
+export async function HandleLogsDriverOperation(req: Request, _user: AuthUser): Promise<Response> {
   try {
     const body = await req.json() as DriverConfig;
     
@@ -176,7 +177,7 @@ async function clearLogsDriver(config: DriverConfig): Promise<Response> {
 
 export default {
   log: { 
-    GET: GetLogsDriverInfo, 
-    POST: HandleLogsDriverOperation 
+    GET: Auth.guard(GetLogsDriverInfo), 
+    POST: Auth.guard(HandleLogsDriverOperation) 
   },
 };

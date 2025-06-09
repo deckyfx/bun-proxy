@@ -1,53 +1,20 @@
 import { Button, FloatingLabelInput } from "@app_components/index";
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
 import { PageContainer } from "../components/PageContainer";
+import { useSettingsStore } from "@app/stores/settingsStore";
 
 export default function Settings() {
-  const [settings, setSettings] = useState({
-    siteName: "My Application",
-    siteDescription: "A modern web application",
-    emailNotifications: true,
-    maintenanceMode: false,
-    apiRateLimit: "1000"
-  });
+  const {
+    settings,
+    dnsStatus,
+    dnsLoading,
+    isLoading,
+    updateSetting,
+    saveSettings,
+    fetchDnsStatus,
+    toggleDnsServer
+  } = useSettingsStore();
 
-  const [dnsStatus, setDnsStatus] = useState({
-    enabled: false,
-    server: null as any
-  });
-  const [dnsLoading, setDnsLoading] = useState(false);
-
-  const handleInputChange = (field: string, value: string | boolean) => {
-    setSettings(prev => ({ ...prev, [field]: value }));
-  };
-
-  const handleSave = () => {
-    alert("Settings saved successfully!");
-  };
-
-  const fetchDnsStatus = async () => {
-    try {
-      const response = await fetch('/api/dns/status');
-      const data = await response.json();
-      setDnsStatus(data);
-    } catch (error) {
-      console.error('Failed to fetch DNS status:', error);
-    }
-  };
-
-  const toggleDnsServer = async () => {
-    setDnsLoading(true);
-    try {
-      const response = await fetch('/api/dns/toggle', { method: 'POST' });
-      const data = await response.json();
-      setDnsStatus(data.status);
-    } catch (error) {
-      console.error('Failed to toggle DNS server:', error);
-      alert('Failed to toggle DNS server');
-    } finally {
-      setDnsLoading(false);
-    }
-  };
 
   useEffect(() => {
     fetchDnsStatus();
@@ -64,21 +31,21 @@ export default function Settings() {
             <FloatingLabelInput
               label="Site Name"
               value={settings.siteName}
-              onChange={(e) => handleInputChange("siteName", e.target.value)}
+              onChange={(e) => updateSetting("siteName", e.target.value)}
               placeholder="Enter site name"
             />
             
             <FloatingLabelInput
               label="Site Description"
               value={settings.siteDescription}
-              onChange={(e) => handleInputChange("siteDescription", e.target.value)}
+              onChange={(e) => updateSetting("siteDescription", e.target.value)}
               placeholder="Enter site description"
             />
             
             <FloatingLabelInput
               label="API Rate Limit (per hour)"
               value={settings.apiRateLimit}
-              onChange={(e) => handleInputChange("apiRateLimit", e.target.value)}
+              onChange={(e) => updateSetting("apiRateLimit", e.target.value)}
               placeholder="Enter rate limit"
               type="number"
             />
@@ -93,7 +60,7 @@ export default function Settings() {
               <input
                 type="checkbox"
                 checked={settings.emailNotifications}
-                onChange={(e) => handleInputChange("emailNotifications", e.target.checked)}
+                onChange={(e) => updateSetting("emailNotifications", e.target.checked)}
                 className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
               />
               <span className="text-sm text-gray-700">Enable email notifications</span>
@@ -109,7 +76,7 @@ export default function Settings() {
               <input
                 type="checkbox"
                 checked={settings.maintenanceMode}
-                onChange={(e) => handleInputChange("maintenanceMode", e.target.checked)}
+                onChange={(e) => updateSetting("maintenanceMode", e.target.checked)}
                 className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
               />
               <span className="text-sm text-gray-700">Enable maintenance mode</span>
@@ -125,30 +92,30 @@ export default function Settings() {
               <div>
                 <p className="text-sm font-medium text-gray-700">DNS Proxy Status</p>
                 <p className="text-xs text-gray-500">
-                  {dnsStatus.enabled ? 'Server is running and intercepting DNS queries' : 'Server is stopped'}
+                  {dnsStatus?.enabled ? 'Server is running and intercepting DNS queries' : 'Server is stopped'}
                 </p>
               </div>
               <div className="flex items-center space-x-3">
                 <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                  dnsStatus.enabled 
+                  dnsStatus?.enabled 
                     ? 'bg-green-100 text-green-800' 
                     : 'bg-red-100 text-red-800'
                 }`}>
-                  {dnsStatus.enabled ? 'Running' : 'Stopped'}
+                  {dnsStatus?.enabled ? 'Running' : 'Stopped'}
                 </span>
                 <Button 
-                  variant={dnsStatus.enabled ? "secondary" : "primary"}
+                  variant={dnsStatus?.enabled ? "secondary" : "primary"}
                   size="sm"
                   onClick={toggleDnsServer}
                   isLoading={dnsLoading}
-                  icon={dnsStatus.enabled ? "stop" : "play_arrow"}
+                  icon={dnsStatus?.enabled ? "stop" : "play_arrow"}
                 >
-                  {dnsStatus.enabled ? 'Stop' : 'Start'}
+                  {dnsStatus?.enabled ? 'Stop' : 'Start'}
                 </Button>
               </div>
             </div>
 
-            {dnsStatus.server && (
+            {dnsStatus?.server && (
               <div className="mt-4 p-4 bg-gray-50 rounded-lg">
                 <h3 className="text-sm font-medium text-gray-700 mb-2">Server Statistics</h3>
                 <div className="grid grid-cols-2 gap-4 text-xs">
@@ -174,7 +141,13 @@ export default function Settings() {
           <Button variant="secondary" size="md">
             Reset
           </Button>
-          <Button variant="primary" size="md" icon="save" onClick={handleSave}>
+          <Button 
+            variant="primary" 
+            size="md" 
+            icon="save" 
+            onClick={saveSettings}
+            isLoading={isLoading}
+          >
             Save Settings
           </Button>
         </div>

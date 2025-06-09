@@ -1,7 +1,8 @@
 import { sseResponder } from "@src/utils/SSEResponder";
 import { dnsEventService } from "@src/dns/DNSEventService";
+import { Auth, type AuthUser } from "@utils/auth";
 
-async function HandleSSEStream(): Promise<Response> {
+async function HandleSSEStream(_req: Request, _user: AuthUser): Promise<Response> {
   // Generate unique client ID
   const clientId = `client_${Date.now()}_${Math.random()
     .toString(36)
@@ -66,6 +67,6 @@ async function HandleSSEStream(): Promise<Response> {
 
 export default {
   stream: {
-    GET: HandleSSEStream,
+    GET: Auth.guard(HandleSSEStream),
   },
 };

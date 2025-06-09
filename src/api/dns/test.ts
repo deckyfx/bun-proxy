@@ -1,9 +1,10 @@
 import { promisify } from 'util';
 import { dnsManager } from '@src/dns';
 import Config from "@src/config";
+import { Auth, type AuthUser } from "@utils/auth";
 import type { DNSTestRequest, DNSTestResponse } from '@typed/dns';
 
-export async function Test(req: any): Promise<Response> {
+export async function Test(req: any, _user: AuthUser): Promise<Response> {
   try {
     const body = await req.text();
     const { domain, configId }: DNSTestRequest = JSON.parse(body);
@@ -94,5 +95,5 @@ export async function Test(req: any): Promise<Response> {
 }
 
 export default {
-  test: { GET: Test },
+  test: { GET: Auth.guard(Test) },
 };

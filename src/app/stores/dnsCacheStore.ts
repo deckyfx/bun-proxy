@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { DRIVER_METHODS, type DriverConfig, type DriverContentResponse } from '@src/types/driver';
 import { useSnackbarStore } from './snackbarStore';
 import { sseClient } from '@src/utils/SSEClient';
+import { api } from '@app/utils/fetchUtils';
 
 interface DnsCacheStore {
   // State
@@ -39,29 +40,12 @@ export const useDnsCacheStore = create<DnsCacheStore>((set, get) => ({
     set({ loading: true, error: null });
     
     try {
-      const response = await fetch('/api/dns/cache');
-      
-      if (!response.ok) {
-        let errorMessage = 'Failed to fetch cache driver info';
-        try {
-          const errorData = await response.json();
-          if (errorData.error) {
-            errorMessage = errorData.error;
-          }
-        } catch {
-          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-        }
-        useSnackbarStore.getState().showAlert(errorMessage, 'Cache Driver Error');
-        return;
-      }
-      
-      const data = await response.json();
+      const data = await api.get('/api/dns/cache');
       set({ driverInfo: data });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to fetch cache driver info';
       set({ error: errorMessage });
       console.error('Failed to fetch cache driver info:', error);
-      useSnackbarStore.getState().showAlert(errorMessage, 'Cache Driver Error');
     } finally {
       set({ loading: false });
     }
@@ -76,33 +60,12 @@ export const useDnsCacheStore = create<DnsCacheStore>((set, get) => ({
         filter
       };
 
-      const response = await fetch('/api/dns/cache', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config),
-      });
-      
-      if (!response.ok) {
-        let errorMessage = 'Failed to get cache content';
-        try {
-          const errorData = await response.json();
-          if (errorData.error) {
-            errorMessage = errorData.error;
-          }
-        } catch {
-          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-        }
-        useSnackbarStore.getState().showAlert(errorMessage, 'Cache Content Error');
-        return;
-      }
-      
-      const data: DriverContentResponse = await response.json();
+      const data: DriverContentResponse = await api.post('/api/dns/cache', config);
       set({ content: data });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to get cache content';
       set({ error: errorMessage });
       console.error('Failed to get cache content:', error);
-      useSnackbarStore.getState().showAlert(errorMessage, 'Cache Content Error');
     } finally {
       set({ contentLoading: false });
     }
@@ -118,35 +81,17 @@ export const useDnsCacheStore = create<DnsCacheStore>((set, get) => ({
         options
       };
 
-      const response = await fetch('/api/dns/cache', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config),
+      await api.post('/api/dns/cache', config, {
+        showSuccess: true,
+        successMessage: 'Cache driver updated successfully'
       });
-      
-      if (!response.ok) {
-        let errorMessage = 'Failed to set cache driver';
-        try {
-          const errorData = await response.json();
-          if (errorData.error) {
-            errorMessage = errorData.error;
-          }
-        } catch {
-          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-        }
-        useSnackbarStore.getState().showAlert(errorMessage, 'Cache Driver Error');
-        return;
-      }
       
       // Refresh driver info after successful change
       await get().fetchDriverInfo();
-      
-      useSnackbarStore.getState().showInfo('Cache driver updated successfully');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to set cache driver';
       set({ error: errorMessage });
       console.error('Failed to set cache driver:', error);
-      useSnackbarStore.getState().showAlert(errorMessage, 'Cache Driver Error');
     } finally {
       set({ loading: false });
     }
@@ -160,35 +105,17 @@ export const useDnsCacheStore = create<DnsCacheStore>((set, get) => ({
         method: DRIVER_METHODS.CLEAR
       };
 
-      const response = await fetch('/api/dns/cache', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config),
+      await api.post('/api/dns/cache', config, {
+        showSuccess: true,
+        successMessage: 'Cache cleared successfully'
       });
-      
-      if (!response.ok) {
-        let errorMessage = 'Failed to clear cache';
-        try {
-          const errorData = await response.json();
-          if (errorData.error) {
-            errorMessage = errorData.error;
-          }
-        } catch {
-          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-        }
-        useSnackbarStore.getState().showAlert(errorMessage, 'Clear Cache Error');
-        return;
-      }
       
       // Clear the content in the store after successful API call
       set({ content: null });
-      
-      useSnackbarStore.getState().showInfo('Cache cleared successfully');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to clear cache';
       set({ error: errorMessage });
       console.error('Failed to clear cache:', error);
-      useSnackbarStore.getState().showAlert(errorMessage, 'Clear Cache Error');
     } finally {
       set({ loading: false });
     }

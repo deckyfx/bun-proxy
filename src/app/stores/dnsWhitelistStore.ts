@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { DRIVER_METHODS, type DriverConfig, type DriverContentResponse } from '@src/types/driver';
 import { useSnackbarStore } from './snackbarStore';
 import { sseClient } from '@src/utils/SSEClient';
+import { api } from '@app/utils/fetchUtils';
 
 interface DnsWhitelistStore {
   // State
@@ -39,29 +40,12 @@ export const useDnsWhitelistStore = create<DnsWhitelistStore>((set, get) => ({
     set({ loading: true, error: null });
     
     try {
-      const response = await fetch('/api/dns/whitelist');
-      
-      if (!response.ok) {
-        let errorMessage = 'Failed to fetch whitelist driver info';
-        try {
-          const errorData = await response.json();
-          if (errorData.error) {
-            errorMessage = errorData.error;
-          }
-        } catch {
-          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-        }
-        useSnackbarStore.getState().showAlert(errorMessage, 'Whitelist Driver Error');
-        return;
-      }
-      
-      const data = await response.json();
+      const data = await api.get('/api/dns/whitelist');
       set({ driverInfo: data });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to fetch whitelist driver info';
       set({ error: errorMessage });
       console.error('Failed to fetch whitelist driver info:', error);
-      useSnackbarStore.getState().showAlert(errorMessage, 'Whitelist Driver Error');
     } finally {
       set({ loading: false });
     }
@@ -76,27 +60,7 @@ export const useDnsWhitelistStore = create<DnsWhitelistStore>((set, get) => ({
         filter
       };
 
-      const response = await fetch('/api/dns/whitelist', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config),
-      });
-      
-      if (!response.ok) {
-        let errorMessage = 'Failed to get whitelist content';
-        try {
-          const errorData = await response.json();
-          if (errorData.error) {
-            errorMessage = errorData.error;
-          }
-        } catch {
-          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-        }
-        useSnackbarStore.getState().showAlert(errorMessage, 'Whitelist Content Error');
-        return;
-      }
-      
-      const data: DriverContentResponse = await response.json();
+      const data: DriverContentResponse = await api.post('/api/dns/whitelist', config);
       set({ content: data });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to get whitelist content';
@@ -118,30 +82,13 @@ export const useDnsWhitelistStore = create<DnsWhitelistStore>((set, get) => ({
         options
       };
 
-      const response = await fetch('/api/dns/whitelist', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config),
+      await api.post('/api/dns/whitelist', config, {
+        showSuccess: true,
+        successMessage: 'Whitelist driver updated successfully'
       });
-      
-      if (!response.ok) {
-        let errorMessage = 'Failed to set whitelist driver';
-        try {
-          const errorData = await response.json();
-          if (errorData.error) {
-            errorMessage = errorData.error;
-          }
-        } catch {
-          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-        }
-        useSnackbarStore.getState().showAlert(errorMessage, 'Whitelist Driver Error');
-        return;
-      }
       
       // Refresh driver info after successful change
       await get().fetchDriverInfo();
-      
-      useSnackbarStore.getState().showInfo('Whitelist driver updated successfully');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to set whitelist driver';
       set({ error: errorMessage });
@@ -160,30 +107,13 @@ export const useDnsWhitelistStore = create<DnsWhitelistStore>((set, get) => ({
         method: DRIVER_METHODS.CLEAR
       };
 
-      const response = await fetch('/api/dns/whitelist', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config),
+      await api.post('/api/dns/whitelist', config, {
+        showSuccess: true,
+        successMessage: 'Whitelist cleared successfully'
       });
-      
-      if (!response.ok) {
-        let errorMessage = 'Failed to clear whitelist';
-        try {
-          const errorData = await response.json();
-          if (errorData.error) {
-            errorMessage = errorData.error;
-          }
-        } catch {
-          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-        }
-        useSnackbarStore.getState().showAlert(errorMessage, 'Clear Whitelist Error');
-        return;
-      }
       
       // Clear the content in the store after successful API call
       set({ content: null });
-      
-      useSnackbarStore.getState().showInfo('Whitelist cleared successfully');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to clear whitelist';
       set({ error: errorMessage });

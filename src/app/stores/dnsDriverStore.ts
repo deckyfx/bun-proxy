@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { type DriversResponse } from '@src/types/driver';
-import { useSnackbarStore } from './snackbarStore';
+import { api } from '@app/utils/fetchUtils';
 
 interface DnsDriverStore {
   // State
@@ -10,6 +10,7 @@ interface DnsDriverStore {
   
   // Actions
   fetchDrivers: () => Promise<void>;
+  setDriver: (scope: string, driver: string) => Promise<void>;
   clearError: () => void;
 }
 
@@ -24,29 +25,36 @@ export const useDnsDriverStore = create<DnsDriverStore>((set, get) => ({
     set({ loading: true, error: null });
     
     try {
-      const response = await fetch('/api/dns/driver');
-      
-      if (!response.ok) {
-        let errorMessage = 'Failed to fetch driver info';
-        try {
-          const errorData = await response.json();
-          if (errorData.error) {
-            errorMessage = errorData.error;
-          }
-        } catch {
-          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-        }
-        useSnackbarStore.getState().showAlert(errorMessage, 'Driver Info Error');
-        return;
-      }
-      
-      const data: DriversResponse = await response.json();
+      const data = await api.get<DriversResponse>('/api/dns/driver');
       set({ drivers: data });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to fetch driver info';
       set({ error: errorMessage });
       console.error('Failed to fetch driver info:', error);
-      useSnackbarStore.getState().showAlert(errorMessage, 'Driver Info Error');
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  setDriver: async (scope: string, driver: string) => {
+    set({ loading: true, error: null });
+    
+    try {
+      await api.post<void, { method: string; driver: string }>(`/api/dns/${scope}`, {
+        method: 'SET',
+        driver: driver
+      }, {
+        showSuccess: true,
+        successMessage: `${scope} driver updated to ${driver}`
+      });
+      
+      // Refresh driver data
+      await get().fetchDrivers();
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : `Failed to set ${scope} driver`;
+      set({ error: errorMessage });
+      console.error(`Failed to set ${scope} driver:`, error);
+      throw error;
     } finally {
       set({ loading: false });
     }

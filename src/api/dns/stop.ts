@@ -1,7 +1,8 @@
 import { dnsManager } from "@src/dns";
+import { Auth, type AuthUser } from "@utils/auth";
 import type { DNSActionResponse } from "@typed/dns";
 
-export async function Stop(_req: any): Promise<Response> {
+export async function Stop(_req: any, _user: AuthUser): Promise<Response> {
   try {
     await dnsManager.stop();
     const managerStatus = dnsManager.getStatus();
@@ -34,5 +35,5 @@ export async function Stop(_req: any): Promise<Response> {
 }
 
 export default {
-  stop: { POST: Stop },
+  stop: { POST: Auth.guard(Stop) },
 };

@@ -9,7 +9,7 @@ export class FileDriver extends BaseDriver {
 
   constructor(options: LogOptions = {}) {
     super(options);
-    this.filePath = options.filePath || './data/dns-logs.jsonl';
+    this.filePath = options.filePath || './data/dns-logs.json';
   }
 
   async log(entry: LogEntry): Promise<void> {

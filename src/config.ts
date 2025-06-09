@@ -17,6 +17,6 @@ export default {
   DNS_PORT: Number(process.env.DNS_PROXY_PORT) || 53,
   NEXTDNS_CONFIG_ID: process.env.NEXTDNS_CONFIG_ID,
 
-  DEBUG_ALWAYS_LOGIN: process.env.DEBUG_ALWAYS_LOGIN === "true",
   DEBUG_START_DNS_SERVER: process.env.DEBUG_START_DNS_SERVER === "true",
+  DEBUG_BYPASS_AUTH: process.env.DEBUG_BYPASS_AUTH === "true",
 } as const;

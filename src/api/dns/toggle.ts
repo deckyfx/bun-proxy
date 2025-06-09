@@ -1,7 +1,8 @@
 import { dnsManager } from "@src/dns";
+import { Auth, type AuthUser } from "@utils/auth";
 import type { DNSToggleResponse } from "@typed/dns";
 
-export async function Toggle(_req: any): Promise<Response> {
+export async function Toggle(_req: any, _user: AuthUser): Promise<Response> {
   try {
     const isEnabled = await dnsManager.toggle();
     const managerStatus = dnsManager.getStatus();
@@ -37,5 +38,5 @@ export async function Toggle(_req: any): Promise<Response> {
 }
 
 export default {
-  toggle: { POST: Toggle },
+  toggle: { POST: Auth.guard(Toggle) },
 };

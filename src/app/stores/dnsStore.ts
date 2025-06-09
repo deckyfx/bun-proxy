@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { DNSStatus, DNSConfigResponse, DNSToggleResponse } from '@typed/dns';
 import { useSnackbarStore } from './snackbarStore';
 import { sseClient } from '@src/utils/SSEClient';
+import { api } from '@app/utils/fetchUtils';
 
 interface DNSConfig {
   port: number;
@@ -69,89 +70,32 @@ export const useDNSStore = create<DNSStore>((set, get) => ({
   // Actions
   fetchStatus: async () => {
     try {
-      const response = await fetch('/api/dns/status');
-      
-      if (!response.ok) {
-        let errorMessage = 'Failed to fetch DNS status';
-        try {
-          const errorData = await response.json();
-          if (errorData.error) {
-            errorMessage = errorData.error;
-          }
-        } catch {
-          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-        }
-        useSnackbarStore.getState().showAlert(errorMessage, 'DNS Status Error');
-        return;
-      }
-      
-      const data: DNSStatus = await response.json();
+      const data: DNSStatus = await api.get('/api/dns/status');
       set({ status: data });
     } catch (error) {
       console.error('Failed to fetch DNS status:', error);
-      useSnackbarStore.getState().showAlert('Failed to fetch DNS status', 'DNS Status Error');
     }
   },
 
   fetchConfig: async () => {
     try {
-      const response = await fetch('/api/dns/config');
-      
-      if (!response.ok) {
-        let errorMessage = 'Failed to fetch DNS config';
-        try {
-          const errorData = await response.json();
-          if (errorData.error) {
-            errorMessage = errorData.error;
-          }
-        } catch {
-          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-        }
-        useSnackbarStore.getState().showAlert(errorMessage, 'DNS Config Error');
-        return;
-      }
-      
-      const data: DNSConfigResponse = await response.json();
+      const data: DNSConfigResponse = await api.get('/api/dns/config');
       set({ config: data.config });
     } catch (error) {
       console.error('Failed to fetch DNS config:', error);
-      useSnackbarStore.getState().showAlert('Failed to fetch DNS config', 'DNS Config Error');
     }
   },
 
   startServer: async (options) => {
     set({ loading: true });
     try {
-      const response = await fetch('/api/dns/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(options),
+      const data: DNSToggleResponse = await api.post('/api/dns/start', options, {
+        showSuccess: true,
+        successMessage: 'DNS server started successfully'
       });
-
-      if (!response.ok) {
-        // Handle HTTP error responses
-        let errorMessage = 'Failed to start DNS server';
-        try {
-          const errorData = await response.json();
-          if (errorData.error) {
-            errorMessage = errorData.error;
-            // Handle specific EADDRINUSE error
-            if (errorMessage.includes('EADDRINUSE')) {
-              errorMessage = 'Port is already in use. The DNS server may already be running.';
-            }
-          }
-        } catch {
-          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-        }
-        useSnackbarStore.getState().showAlert(errorMessage, 'DNS Start Error');
-        return;
-      }
-
-      const data: DNSToggleResponse = await response.json();
       set({ status: data.status });
     } catch (error) {
       console.error('Failed to start DNS server:', error);
-      useSnackbarStore.getState().showAlert('Failed to start DNS server', 'DNS Start Error');
       // Don't re-throw to prevent uncaught errors
     } finally {
       set({ loading: false });
@@ -161,30 +105,13 @@ export const useDNSStore = create<DNSStore>((set, get) => ({
   stopServer: async () => {
     set({ loading: true });
     try {
-      const response = await fetch('/api/dns/stop', {
-        method: 'POST',
+      const data: DNSToggleResponse = await api.post('/api/dns/stop', undefined, {
+        showSuccess: true,
+        successMessage: 'DNS server stopped successfully'
       });
-
-      if (!response.ok) {
-        // Handle HTTP error responses
-        let errorMessage = 'Failed to stop DNS server';
-        try {
-          const errorData = await response.json();
-          if (errorData.error) {
-            errorMessage = errorData.error;
-          }
-        } catch {
-          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-        }
-        useSnackbarStore.getState().showAlert(errorMessage, 'DNS Stop Error');
-        return;
-      }
-
-      const data: DNSToggleResponse = await response.json();
       set({ status: data.status });
     } catch (error) {
       console.error('Failed to stop DNS server:', error);
-      useSnackbarStore.getState().showAlert('Failed to stop DNS server', 'DNS Stop Error');
       // Don't re-throw to prevent uncaught errors
     } finally {
       set({ loading: false });
@@ -194,30 +121,13 @@ export const useDNSStore = create<DNSStore>((set, get) => ({
   toggleServer: async () => {
     set({ loading: true });
     try {
-      const response = await fetch('/api/dns/toggle', {
-        method: 'POST',
+      const data: DNSToggleResponse = await api.post('/api/dns/toggle', undefined, {
+        showSuccess: true,
+        successMessage: 'DNS server toggled successfully'
       });
-
-      if (!response.ok) {
-        // Handle HTTP error responses
-        let errorMessage = 'Failed to toggle DNS server';
-        try {
-          const errorData = await response.json();
-          if (errorData.error) {
-            errorMessage = errorData.error;
-          }
-        } catch {
-          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-        }
-        useSnackbarStore.getState().showAlert(errorMessage, 'DNS Toggle Error');
-        return;
-      }
-
-      const data: DNSToggleResponse = await response.json();
       set({ status: data.status });
     } catch (error) {
       console.error('Failed to toggle DNS server:', error);
-      useSnackbarStore.getState().showAlert('Failed to toggle DNS server', 'DNS Toggle Error');
       // Don't re-throw to prevent uncaught errors
     } finally {
       set({ loading: false });
@@ -228,30 +138,11 @@ export const useDNSStore = create<DNSStore>((set, get) => ({
     set({ testLoading: true, testResult: '' });
     
     try {
-      const response = await fetch('/api/dns/test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          domain: 'google.com',
-          configId,
-        }),
+      const data = await api.post('/api/dns/test', {
+        domain: 'google.com',
+        configId,
       });
-      
-      if (response.ok) {
-        const data = await response.json();
-        set({ testResult: `✅ Success: ${data.result || 'DNS resolution working'}` });
-      } else {
-        let errorMessage = response.statusText;
-        try {
-          const errorData = await response.json();
-          if (errorData.error) {
-            errorMessage = errorData.error;
-          }
-        } catch {
-          // Keep the default statusText
-        }
-        set({ testResult: `❌ Failed: ${errorMessage}` });
-      }
+      set({ testResult: `✅ Success: ${data.result || 'DNS resolution working'}` });
     } catch (error) {
       set({ 
         testResult: `❌ Error: ${error instanceof Error ? error.message : 'Test failed'}` 

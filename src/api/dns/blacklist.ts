@@ -1,4 +1,5 @@
 import { dnsManager } from "@src/dns/manager";
+import { Auth, type AuthUser } from "@utils/auth";
 import { DRIVER_TYPES, DRIVER_METHODS, type DriverConfig, type DriverContentResponse } from "@src/types/driver";
 import { 
   createBlacklistDriverInstance, 
@@ -10,7 +11,7 @@ import {
 } from "./utils";
 
 // GET /api/dns/blacklist - Get blacklist driver configuration
-export async function GetBlacklistDriverInfo(_req: Request): Promise<Response> {
+export async function GetBlacklistDriverInfo(_req: Request, _user: AuthUser): Promise<Response> {
   try {
     const drivers = getDrivers();
     const serverRunning = isServerRunning();
@@ -34,7 +35,7 @@ export async function GetBlacklistDriverInfo(_req: Request): Promise<Response> {
 }
 
 // POST /api/dns/blacklist - Handle blacklist driver operations
-export async function HandleBlacklistDriverOperation(req: Request): Promise<Response> {
+export async function HandleBlacklistDriverOperation(req: Request, _user: AuthUser): Promise<Response> {
   try {
     const body = await req.json() as DriverConfig;
     
@@ -384,7 +385,7 @@ async function exportBlacklistEntries(config: DriverConfig): Promise<Response> {
 
 export default {
   blacklist: { 
-    GET: GetBlacklistDriverInfo, 
-    POST: HandleBlacklistDriverOperation 
+    GET: Auth.guard(GetBlacklistDriverInfo), 
+    POST: Auth.guard(HandleBlacklistDriverOperation) 
   },
 };

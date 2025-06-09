@@ -1,4 +1,5 @@
 import { dnsManager } from "@src/dns/manager";
+import { Auth, type AuthUser } from "@utils/auth";
 import { DRIVER_TYPES, DRIVER_METHODS, type DriverConfig, type DriverContentResponse } from "@src/types/driver";
 import { 
   createWhitelistDriverInstance, 
@@ -10,7 +11,7 @@ import {
 } from "./utils";
 
 // GET /api/dns/whitelist - Get whitelist driver configuration
-export async function GetWhitelistDriverInfo(_req: Request): Promise<Response> {
+export async function GetWhitelistDriverInfo(_req: Request, _user: AuthUser): Promise<Response> {
   try {
     const drivers = getDrivers();
     const serverRunning = isServerRunning();
@@ -34,7 +35,7 @@ export async function GetWhitelistDriverInfo(_req: Request): Promise<Response> {
 }
 
 // POST /api/dns/whitelist - Handle whitelist driver operations
-export async function HandleWhitelistDriverOperation(req: Request): Promise<Response> {
+export async function HandleWhitelistDriverOperation(req: Request, _user: AuthUser): Promise<Response> {
   try {
     const body = await req.json() as DriverConfig;
     
@@ -384,7 +385,7 @@ async function exportWhitelistEntries(_config: DriverConfig): Promise<Response> 
 
 export default {
   whitelist: { 
-    GET: GetWhitelistDriverInfo, 
-    POST: HandleWhitelistDriverOperation 
+    GET: Auth.guard(GetWhitelistDriverInfo), 
+    POST: Auth.guard(HandleWhitelistDriverOperation) 
   },
 };

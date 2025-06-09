@@ -1,8 +1,9 @@
 import { dnsManager } from "@src/dns";
 import config from "@src/config";
+import { Auth, type AuthUser } from "@utils/auth";
 import type { DNSConfigResponse, DNSConfig } from "@typed/dns";
 
-export async function Config(_req: any): Promise<Response> {
+export async function Config(_req: any, _user: AuthUser): Promise<Response> {
   try {
     const status = dnsManager.getStatus();
 
@@ -36,5 +37,5 @@ export async function Config(_req: any): Promise<Response> {
 }
 
 export default {
-  config: { GET: Config },
+  config: { GET: Auth.guard(Config) },
 };

@@ -1,4 +1,5 @@
 import { dnsManager } from "@src/dns/manager";
+import { Auth, type AuthUser } from "@utils/auth";
 import { DRIVER_TYPES, DRIVER_METHODS, type DriverConfig, type DriverContentResponse } from "@src/types/driver";
 import { 
   createCacheDriverInstance, 
@@ -10,7 +11,7 @@ import {
 } from "./utils";
 
 // GET /api/dns/cache - Get cache driver configuration
-export async function GetCacheDriverInfo(_req: Request): Promise<Response> {
+export async function GetCacheDriverInfo(_req: Request, _user: AuthUser): Promise<Response> {
   try {
     const drivers = getDrivers();
     const serverRunning = isServerRunning();
@@ -34,7 +35,7 @@ export async function GetCacheDriverInfo(_req: Request): Promise<Response> {
 }
 
 // POST /api/dns/cache - Handle cache driver operations
-export async function HandleCacheDriverOperation(req: Request): Promise<Response> {
+export async function HandleCacheDriverOperation(req: Request, _user: AuthUser): Promise<Response> {
   try {
     const body = await req.json() as DriverConfig;
     
@@ -311,7 +312,7 @@ async function updateCacheEntry(config: DriverConfig): Promise<Response> {
 
 export default {
   cache: { 
-    GET: GetCacheDriverInfo, 
-    POST: HandleCacheDriverOperation 
+    GET: Auth.guard(GetCacheDriverInfo), 
+    POST: Auth.guard(HandleCacheDriverOperation) 
   },
 };
