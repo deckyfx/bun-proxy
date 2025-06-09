@@ -1,0 +1,51 @@
+API Endpoints Found in src/app/stores/*
+
+AUTH STORE (authStore.ts):
+- POST /api/auth/refresh
+- POST /api/user/me  
+- POST /api/auth/signin
+- POST /api/auth/signup
+- POST /api/auth/logout
+- GET /api/system/health
+
+DNS STORE (dnsStore.ts):
+- GET /api/dns/status
+- GET /api/dns/config
+- POST /api/dns/start
+- POST /api/dns/stop
+- POST /api/dns/toggle
+- POST /api/dns/test
+- GET /api/sse/stream (SSE - NEW UNIFIED ENDPOINT)
+
+DRIVER STORE (driverStore.ts):
+- GET /api/dns/driver
+- POST /api/dns/driver
+- GET /api/sse/stream (SSE - NEW UNIFIED ENDPOINT)
+
+SSE ENDPOINTS:
+- GET /api/sse/stream (Unified SSE stream)
+- GET /api/sse/test (SSE test endpoint)
+
+DIALOG STORE (dialogStore.ts):
+- No API endpoints
+
+SNACKBAR STORE (snackbarStore.ts):
+- No API endpoints
+
+VALIDATION STORE (validationStore.ts):
+- No API endpoints
+
+REMOVED LEGACY ENDPOINTS:
+- /api/dns/events (replaced by /api/sse/stream)
+
+NEW EVENT-DRIVEN CHANNELS:
+- dns/info - DNS configuration changes
+- dns/status - DNS server start/stop events  
+- dns/log/event - Real-time log streaming
+- dns/log/ - Log driver content updates
+- dns/cache/ - Cache driver content updates
+- dns/blacklist/ - Blacklist driver content updates
+- dns/whitelist/ - Whitelist driver content updates
+- system/heartbeat - Connection health
+
+TOTAL UNIQUE API ENDPOINTS: 12 (same count, but improved architecture)

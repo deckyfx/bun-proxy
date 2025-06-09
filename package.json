@@ -10,8 +10,8 @@
     "migrate": "bun run src/db/migrations/index.ts",
     "seed": "bun run src/db/seeds/index.ts",
     "setup-db": "bun run drizzle && bun run migrate && bun run seed",
-    "test:hit": "bun run test-dns.ts",
-    "test:sse": "bun run test-sse.ts",
+    "test:hit": "bun run tests/test-dns.ts",
+    "test:sse": "bun run tests/test-sse.ts",
     "test:serverhit": "bun dev > ./server.log 2>&1 & DEV_PID=$!; bun test:hit > ./client.log 2>&1; kill $DEV_PID"
   },
   "dependencies": {

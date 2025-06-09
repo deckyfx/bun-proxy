@@ -5,7 +5,6 @@ import stop from './stop';
 import toggle from './toggle';
 import test from './test';
 import driver from './driver';
-import events from './events';
 
 export default {
   ...status,
@@ -15,5 +14,4 @@ export default {
   ...toggle,
   ...test,
   ...driver,
-  ...events,
 };

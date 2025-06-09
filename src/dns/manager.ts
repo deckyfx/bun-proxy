@@ -12,12 +12,13 @@ import { InMemoryDriver as BlacklistInMemoryDriver } from "./drivers/blacklist/I
 import { InMemoryDriver as WhitelistInMemoryDriver } from "./drivers/whitelist/InMemoryDriver";
 
 class DNSManager {
+  private static instance: DNSManager;
   private server?: DNSProxyServer;
   private isEnabled: boolean = false;
   private currentNextDnsConfigId?: string;
   private lastUsedDrivers: DNSServerDrivers;
 
-  constructor() {
+  private constructor() {
     // Initialize default drivers configuration - logs: Console, others: InMemory
     this.lastUsedDrivers = {
       logs: new ConsoleDriver(),
@@ -25,6 +26,13 @@ class DNSManager {
       blacklist: new BlacklistInMemoryDriver(),
       whitelist: new WhitelistInMemoryDriver(),
     };
+  }
+
+  static getInstance(): DNSManager {
+    if (!DNSManager.instance) {
+      DNSManager.instance = new DNSManager();
+    }
+    return DNSManager.instance;
   }
 
   async start(
@@ -117,16 +125,37 @@ class DNSManager {
 
   updateDriverConfiguration(drivers: Partial<DNSServerDrivers>): void {
     this.lastUsedDrivers = { ...this.lastUsedDrivers, ...drivers };
+    this.notifyConfigChange();
+  }
+
+  setNextDnsConfigId(configId: string): void {
+    this.currentNextDnsConfigId = configId;
+    this.notifyConfigChange();
   }
 
   private notifyStatusChange(): void {
     // Import here to avoid circular dependency
-    import("@src/api/dns/events").then(({ notifyStatusChange }) => {
-      notifyStatusChange();
+    import("@src/dns/DNSEventService").then(({ dnsEventService }) => {
+      const status = this.getStatus();
+      dnsEventService.emitStatusChange(status);
     }).catch(() => {
-      // SSE module not available, ignore
+      // DNS Event Service not available, ignore
+    });
+  }
+
+  private notifyConfigChange(): void {
+    // Import here to avoid circular dependency
+    import("@src/dns/DNSEventService").then(({ dnsEventService }) => {
+      const config = {
+        nextdnsConfigId: this.currentNextDnsConfigId,
+        drivers: this.lastUsedDrivers,
+        timestamp: Date.now()
+      };
+      dnsEventService.emitConfigChange(config);
+    }).catch(() => {
+      // DNS Event Service not available, ignore
     });
   }
 }
 
-export const dnsManager = new DNSManager();
+export const dnsManager = DNSManager.getInstance();

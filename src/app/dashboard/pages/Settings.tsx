@@ -22,7 +22,6 @@ export default function Settings() {
   };
 
   const handleSave = () => {
-    console.log("Saving settings:", settings);
     alert("Settings saved successfully!");
   };
 
@@ -161,18 +160,6 @@ export default function Settings() {
                     <span className="text-gray-500">Providers:</span>
                     <span className="ml-2">{dnsStatus.server.providers?.join(', ')}</span>
                   </div>
-                  {dnsStatus.server.stats && (
-                    <>
-                      <div>
-                        <span className="text-gray-500">Total Queries:</span>
-                        <span className="ml-2 font-mono">{dnsStatus.server.stats.totalQueries}</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-500">Cache Size:</span>
-                        <span className="ml-2 font-mono">{dnsStatus.server.stats.cacheSize}</span>
-                      </div>
-                    </>
-                  )}
                 </div>
               </div>
             )}

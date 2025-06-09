@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { DNSStatus, DNSConfigResponse, DNSToggleResponse } from '@typed/dns';
 import { useSnackbarStore } from './snackbarStore';
+import { sseClient } from '@src/utils/SSEClient';
 
 interface DNSConfig {
   port: number;
@@ -21,6 +22,7 @@ interface DNSStore {
   testLoading: boolean;
   testResult: string;
   connected: boolean;
+  initialConnectionEstablished: boolean;
   
   // Actions
   fetchStatus: () => Promise<void>;
@@ -39,8 +41,8 @@ interface DNSStore {
   disconnectSSE: () => void;
 }
 
-// SSE instance
-let eventSource: EventSource | null = null;
+// SSE subscription cleanup functions
+let sseUnsubscribers: (() => void)[] = [];
 
 export const useDNSStore = create<DNSStore>((set, get) => ({
   // Initial state
@@ -62,6 +64,7 @@ export const useDNSStore = create<DNSStore>((set, get) => ({
   testLoading: false,
   testResult: '',
   connected: false,
+  initialConnectionEstablished: false,
 
   // Actions
   fetchStatus: async () => {
@@ -265,77 +268,59 @@ export const useDNSStore = create<DNSStore>((set, get) => ({
   },
 
   connectSSE: () => {
-    if (eventSource) {
-      eventSource.close();
-    }
+    // Clean up existing subscriptions
+    get().disconnectSSE();
 
-    eventSource = new EventSource('/api/dns/events');
-    
-    eventSource.onopen = () => {
-      set({ connected: true });
-    };
-
-    eventSource.onmessage = (event) => {
-      try {
-        // Validate event data before parsing
-        if (!event.data || event.data.trim() === '') {
-          return; // Skip empty messages
-        }
-
-        const message = JSON.parse(event.data);
-        
-        // Validate message structure
-        if (!message || typeof message !== 'object') {
-          return; // Skip invalid messages
-        }
-        
-        switch (message.type) {
-          case 'status':
-            if (message.data) {
-              set({ status: message.data });
-            }
-            break;
-          case 'error':
-            console.error('DNS SSE error:', message.data);
-            // Only show snackbar for actual error messages, not parsing issues
-            if (message.data) {
-              useSnackbarStore.getState().showAlert('DNS SSE connection error', 'Connection Error');
-            }
-            break;
-          case 'keepalive':
-            // Keep connection alive - no action needed
-            break;
-          default:
-            // Unknown message type - just log it, don't show snackbar
-            console.log('Unknown DNS SSE message type:', message.type);
-            break;
-        }
-      } catch (error) {
-        // Only log parsing errors, don't spam snackbars for them
-        console.error('Failed to parse DNS SSE message:', error, 'Raw data:', event.data);
+    // Subscribe to DNS status updates (server start/stop)
+    const statusUnsubscriber = sseClient.subscribe('dns/status', (data) => {
+      if (data) {
+        set({ status: data });
       }
-    };
+    });
 
-    eventSource.onerror = (error) => {
-      console.error('DNS SSE error:', error);
-      set({ connected: false });
-      useSnackbarStore.getState().showWarning('DNS connection lost, attempting to reconnect...', 'Connection Warning');
+    // Subscribe to DNS info updates (config changes)
+    const infoUnsubscriber = sseClient.subscribe('dns/info', (data) => {
+      if (data && data.config) {
+        set({ config: data.config });
+      }
+    });
+
+    // Subscribe to connection state changes
+    const connectionUnsubscriber = sseClient.onConnectionChange((connected) => {
+      const currentState = get();
       
-      // Auto-reconnect after 5 seconds
-      setTimeout(() => {
-        if (get().connected === false) {
-          get().connectSSE();
-        }
-      }, 5000);
-    };
+      set({ 
+        connected,
+        // Mark that we've established initial connection once we connect for the first time
+        initialConnectionEstablished: currentState.initialConnectionEstablished || connected
+      });
+      
+      // Only show reconnection message after initial connection was established
+      // and only from DNS store (not driver store) to avoid duplicates
+      if (!connected && currentState.initialConnectionEstablished) {
+        setTimeout(() => {
+          // Double check connection is still down before showing message
+          if (!sseClient.isConnected()) {
+            useSnackbarStore.getState().showWarning('Connection lost, attempting to reconnect...', 'Connection Warning');
+          }
+        }, 1000); // Wait 1 second before showing warning
+      }
+    });
 
+    // Subscribe to error events
+    const errorUnsubscriber = sseClient.subscribe('error', (errorData) => {
+      if (errorData) {
+        useSnackbarStore.getState().showAlert('DNS SSE connection error', 'Connection Error');
+      }
+    });
+
+    // Store unsubscribers for cleanup
+    sseUnsubscribers = [statusUnsubscriber, infoUnsubscriber, connectionUnsubscriber, errorUnsubscriber];
   },
 
   disconnectSSE: () => {
-    if (eventSource) {
-      eventSource.close();
-      eventSource = null;
-    }
-    set({ connected: false });
+    // Clean up all subscriptions
+    sseUnsubscribers.forEach(unsubscribe => unsubscribe());
+    sseUnsubscribers = [];
   },
 }));

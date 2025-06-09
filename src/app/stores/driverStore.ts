@@ -9,6 +9,7 @@ import {
   type DriverSetResponse
 } from '@src/types/driver';
 import { useSnackbarStore } from './snackbarStore';
+import { sseClient } from '@src/utils/SSEClient';
 
 interface DriverStore {
   // State
@@ -32,8 +33,8 @@ interface DriverStore {
   disconnectSSE: () => void;
 }
 
-// SSE instance for driver store
-let driverEventSource: EventSource | null = null;
+// SSE subscription cleanup functions for driver store
+let driverSseUnsubscribers: (() => void)[] = [];
 
 export const useDriverStore = create<DriverStore>((set, get) => ({
   // Initial state
@@ -173,7 +174,6 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
       // Refresh drivers list after successful change
       await get().fetchDrivers();
       
-      console.log(`Driver set successfully:`, data);
       useSnackbarStore.getState().showInfo(`${scope} driver updated successfully`);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : `Failed to set ${scope} driver`;
@@ -254,118 +254,85 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
   },
 
   connectSSE: () => {
-    if (driverEventSource) {
-      driverEventSource.close();
-    }
+    // Clean up existing subscriptions
+    get().disconnectSSE();
 
-    driverEventSource = new EventSource('/api/dns/events');
-    
-    driverEventSource.onopen = () => {
-      set({ connected: true });
-    };
-
-    driverEventSource.onmessage = (event) => {
-      try {
-        // Validate event data before parsing
-        if (!event.data || event.data.trim() === '') {
-          return; // Skip empty messages
-        }
-
-        const message = JSON.parse(event.data);
-        
-        // Validate message structure
-        if (!message || typeof message !== 'object') {
-          return; // Skip invalid messages
-        }
-        
-        switch (message.type) {
-          case 'drivers':
-            // Use the correct property name from SSE payload
-            const driversData = message.drivers || message.data;
-            
-            // Validate drivers data exists
-            if (!driversData || typeof driversData !== 'object') {
-              return;
-            }
-
-            // Convert the raw driver data to DriverContentResponse format
-            // Preserve existing logs data to avoid interfering with real-time stream
-            const currentState = get();
-            const formattedContent: Record<DriverType, DriverContentResponse | null> = {
-              [DRIVER_TYPES.LOGS]: currentState.driverContent[DRIVER_TYPES.LOGS],
-              [DRIVER_TYPES.CACHE]: null,
-              [DRIVER_TYPES.BLACKLIST]: null,
-              [DRIVER_TYPES.WHITELIST]: null,
-            };
-
-            for (const [scope, data] of Object.entries(driversData)) {
-              const typedData = data as any;
-              
-              // Skip logs updates from automatic SSE to prevent interference with real-time stream
-              // Logs will only be updated by explicit getDriverContent calls (refresh button)
-              if (scope === DRIVER_TYPES.LOGS) {
-                continue;
-              }
-              
-              if (typedData && typedData.success) {
-                formattedContent[scope as DriverType] = {
-                  success: true,
-                  content: typedData.content,
-                  driver: typedData.driver,
-                  timestamp: typedData.timestamp
-                };
-              } else if (typedData && !typedData.success) {
-                formattedContent[scope as DriverType] = {
-                  success: false,
-                  error: typedData.error,
-                  timestamp: typedData.timestamp
-                };
-              }
-            }
-
-            set({ driverContent: formattedContent });
-            break;
-          case 'error':
-            console.error('Driver SSE error:', message.data);
-            // Only show snackbar for actual error messages, not parsing issues
-            if (message.data) {
-              useSnackbarStore.getState().showAlert('Driver SSE connection error', 'Connection Error');
-            }
-            break;
-          case 'keepalive':
-            // Keep connection alive - no action needed
-            break;
-          default:
-            // Unknown message type - just log it, don't show snackbar
-            console.log('Unknown SSE message type:', message.type);
-            break;
-        }
-      } catch (error) {
-        // Only log parsing errors, don't spam snackbars for them
-        console.error('Failed to parse driver SSE message:', error, 'Raw data:', event.data);
+    // Subscribe to individual driver content updates
+    const logsUnsubscriber = sseClient.subscribe('dns/log/', (logData) => {
+      if (logData) {
+        set((state) => ({
+          driverContent: {
+            ...state.driverContent,
+            [DRIVER_TYPES.LOGS]: logData
+          }
+        }));
       }
-    };
+    });
 
-    driverEventSource.onerror = (error) => {
-      console.error('Driver SSE error:', error);
-      set({ connected: false });
-      useSnackbarStore.getState().showWarning('Driver connection lost, attempting to reconnect...', 'Connection Warning');
-      
-      // Auto-reconnect after 5 seconds
-      setTimeout(() => {
-        if (get().connected === false) {
-          get().connectSSE();
-        }
-      }, 5000);
-    };
+    const cacheUnsubscriber = sseClient.subscribe('dns/cache/', (cacheData) => {
+      if (cacheData) {
+        set((state) => ({
+          driverContent: {
+            ...state.driverContent,
+            [DRIVER_TYPES.CACHE]: cacheData
+          }
+        }));
+      }
+    });
 
+    const blacklistUnsubscriber = sseClient.subscribe('dns/blacklist/', (blacklistData) => {
+      if (blacklistData) {
+        set((state) => ({
+          driverContent: {
+            ...state.driverContent,
+            [DRIVER_TYPES.BLACKLIST]: blacklistData
+          }
+        }));
+      }
+    });
+
+    const whitelistUnsubscriber = sseClient.subscribe('dns/whitelist/', (whitelistData) => {
+      if (whitelistData) {
+        set((state) => ({
+          driverContent: {
+            ...state.driverContent,
+            [DRIVER_TYPES.WHITELIST]: whitelistData
+          }
+        }));
+      }
+    });
+
+    // Subscribe to real-time log events (for live streaming)
+    const logEventUnsubscriber = sseClient.subscribe('dns/log/event', (logEntry) => {
+      if (logEntry) {
+        // Handle real-time log events - could update a separate live log stream
+        console.log('Real-time log event:', logEntry);
+      }
+    });
+
+    // Subscribe to connection state changes (no snackbar - DNS store handles this)
+    const connectionUnsubscriber = sseClient.onConnectionChange((connected) => {
+      set({ connected });
+      // Don't show connection messages from driver store to avoid duplicates
+    });
+
+    // Subscribe to error events
+    const errorUnsubscriber = sseClient.subscribe('error', (errorData) => {
+      if (errorData) {
+        useSnackbarStore.getState().showAlert('Driver SSE connection error', 'Connection Error');
+      }
+    });
+
+    // Store unsubscribers for cleanup
+    driverSseUnsubscribers = [
+      logsUnsubscriber, cacheUnsubscriber, blacklistUnsubscriber, whitelistUnsubscriber,
+      logEventUnsubscriber, connectionUnsubscriber, errorUnsubscriber
+    ];
   },
 
   disconnectSSE: () => {
-    if (driverEventSource) {
-      driverEventSource.close();
-      driverEventSource = null;
-    }
-    set({ connected: false });
+    // Clean up all subscriptions
+    driverSseUnsubscribers.forEach(unsubscribe => unsubscribe());
+    driverSseUnsubscribers = [];
   },
 }));

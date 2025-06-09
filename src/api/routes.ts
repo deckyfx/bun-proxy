@@ -2,6 +2,7 @@ import auth from './auth';
 import user from './user';
 import system from './system';
 import dns from './dns';
+import sse from './sse';
 
 type RouteHandler = (req: any) => Promise<Response>;
 type RouteConfig = { [K in 'GET' | 'POST' | 'PUT' | 'DELETE']?: RouteHandler };
@@ -11,6 +12,7 @@ const ScopedRoutes: Record<string, Record<string, RouteConfig>> = {
   user,
   system,
   dns,
+  sse,
 };
 
 export default ScopedRoutes;

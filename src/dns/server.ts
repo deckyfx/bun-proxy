@@ -1,7 +1,6 @@
 import * as dgram from "dgram";
 import DNS2 from "dns2";
 import { BaseProvider } from "./providers";
-import { DNSQueryTracker } from "./tracker";
 import type { BaseDriver as LogsBaseDriver, LogEntry } from "./drivers/logs/BaseDriver";
 import type { BaseDriver as CachesBaseDriver } from "./drivers/caches/BaseDriver";
 import type { BaseDriver as BlacklistBaseDriver } from "./drivers/blacklist/BaseDriver";
@@ -57,13 +56,11 @@ export class DNSProxyServer {
   private isRunning: boolean = false;
   private port: number;
   private providers: BaseProvider[];
-  private tracker: DNSQueryTracker;
   private drivers: DNSServerDrivers = {};
 
   constructor(port: number = 53, providers: BaseProvider[], drivers?: DNSServerDrivers) {
     this.port = port;
     this.providers = providers;
-    this.tracker = new DNSQueryTracker();
     
     // Set default drivers - logs: Console, others: InMemory
     this.drivers = {
@@ -428,7 +425,6 @@ export class DNSProxyServer {
         const responseBuffer = await provider.resolve(queryBuffer);
         const responseTime = Date.now() - startTime;
         
-        this.tracker.recordQuery(provider.name, queryInfo.domain);
         
         // Parse the response using detailed JSON parsing for caching
         let resolvedAddresses: string[] = [];
@@ -549,17 +545,8 @@ export class DNSProxyServer {
   }
 
   private getOptimizedProviderOrder(): BaseProvider[] {
-    // Prioritize based on usage tracking to minimize NextDNS usage
-    return this.providers.sort((a, b) => {
-      const aUsage = this.tracker.getProviderUsage(a.name);
-      const bUsage = this.tracker.getProviderUsage(b.name);
-
-      // If one is NextDNS, prefer the other if usage is high
-      if (a.name === "nextdns" && aUsage.hourlyQueries > 100) return 1;
-      if (b.name === "nextdns" && bUsage.hourlyQueries > 100) return -1;
-
-      return aUsage.failureRate - bUsage.failureRate;
-    });
+    // Return providers in original order (no optimization)
+    return this.providers;
   }
 
   // Driver configuration methods
@@ -626,7 +613,6 @@ export class DNSProxyServer {
       isRunning: this.isRunning,
       port: this.port,
       providers: this.providers.map((p) => p.name),
-      stats: this.tracker.getStats(),
       drivers: {
         logs: !!this.drivers.logs,
         cache: !!this.drivers.cache,

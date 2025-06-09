@@ -129,3 +129,29 @@ When the user requests to "journal this session", always:
 1. Create a journal entry in `.claude/journals/` with format: `YYYYMMDD_hh:mm:ss_descriptive_title.md`
 2. Include comprehensive session overview, accomplishments, technical details, and current state
 3. Update this CLAUDE.md file to reflect any new patterns or architectural changes
+
+## SSE Event System Architecture
+
+The application now uses a unified, event-driven SSE system:
+
+### Unified SSE Endpoint
+- **Single Connection**: `/api/sse/stream` replaces multiple legacy endpoints
+- **Channel-Based Routing**: Events routed by path structure (`dns/status`, `dns/log/event`, etc.)
+- **Event-Driven**: No wasteful polling - events only emitted when changes occur
+
+### SSE Singletons
+- **SSEClient** (`src/utils/SSEClient.ts`): Client-side singleton with auto-connection management
+- **SSEResponder** (`src/utils/SSEResponder.ts`): Server-side singleton for broadcasting events
+- **DNSEventService** (`src/dns/DNSEventService.ts`): Event orchestration service
+
+### Channel Structure
+- `dns/info` - DNS configuration changes (event-triggered)
+- `dns/status` - DNS server start/stop events
+- `dns/log/event` - Real-time log streaming
+- `dns/log/`, `dns/cache/`, `dns/blacklist/`, `dns/whitelist/` - Driver content updates
+- `system/heartbeat` - Connection health (30s intervals)
+
+### Connection Management
+- Stores connect via `connectSSE()` method calls
+- DNS Store handles connection warnings (Driver Store is silent to prevent duplicates)
+- Auto-initialization when first client connects, cleanup when last disconnects

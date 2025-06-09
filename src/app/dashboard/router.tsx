@@ -12,7 +12,6 @@ export default function Router() {
   const [isClient, setIsClient] = useState(false);
 
   useEffect(() => {
-    console.log(isClient);
     setIsClient(true);
   }, []);
 

@@ -5,6 +5,7 @@ import type { LogEntry } from "@src/dns/drivers/logs/BaseDriver";
 import { useDriverStore } from "@app/stores/driverStore";
 import { useDialogStore } from "@app/stores/dialogStore";
 import { useSnackbarStore } from "@app/stores/snackbarStore";
+import { sseClient } from "@src/utils/SSEClient";
 
 interface LogsDriverProps {
   drivers: any;
@@ -194,45 +195,32 @@ export default function LogsDriver({ drivers, loading, onSetDriver }: LogsDriver
 
   // SSE connection for real-time logs
   useEffect(() => {
-    const eventSource = new EventSource('/api/dns/events');
-    
-    eventSource.onopen = () => {
-      setConnected(true);
-    };
-    
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
+    // Subscribe to real-time log events
+    const logEventUnsubscriber = sseClient.subscribe('dns/log/event', (logEntry) => {
+      if (logEntry) {
+        const newLogEntry = {
+          ...logEntry,
+          timestamp: new Date(logEntry.timestamp)
+        };
         
-        // Handle individual log events (real-time only)
-        if (data.type === 'log_event' && data.data) {
-          const newLogEntry = {
-            ...data.data,
-            timestamp: new Date(data.data.timestamp)
-          };
-          
-          setLogs(prev => {
-            // Add new entry and keep last 100, sorted by timestamp (newest first)
-            const updated = [newLogEntry, ...prev]
-              .sort((a: LogEntry, b: LogEntry) => b.timestamp.getTime() - a.timestamp.getTime())
-              .slice(0, 100);
-            return updated;
-          });
-        }
-        
-        // No more bulk driver updates for logs - use separate HTTP endpoint for history
-      } catch (error) {
-        console.error('Error parsing SSE data:', error);
+        setLogs(prev => {
+          // Add new entry and keep last 100, sorted by timestamp (newest first)
+          const updated = [newLogEntry, ...prev]
+            .sort((a: LogEntry, b: LogEntry) => b.timestamp.getTime() - a.timestamp.getTime())
+            .slice(0, 100);
+          return updated;
+        });
       }
-    };
-    
-    eventSource.onerror = () => {
-      setConnected(false);
-    };
+    });
+
+    // Subscribe to connection state changes
+    const connectionUnsubscriber = sseClient.onConnectionChange((isConnected) => {
+      setConnected(isConnected);
+    });
     
     return () => {
-      eventSource.close();
-      setConnected(false);
+      logEventUnsubscriber();
+      connectionUnsubscriber();
     };
   }, []);
 
