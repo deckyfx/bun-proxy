@@ -2,7 +2,9 @@ import { getAccessTokenFromRequest, verifyAccessToken } from "@utils/auth";
 import { type UserType } from "@db/schema";
 import Config from "@src/config";
 
-async function HydrateRoute(req: Bun.BunRequest<"/hydrate">): Promise<Response> {
+async function HydrateRoute(
+  req: Bun.BunRequest<"/hydrate">
+): Promise<Response> {
   const token = getAccessTokenFromRequest(req);
   const user = token ? verifyAccessToken<UserType>(token) : null;
   if (!user && !Config.DEBUG_BYPASS_AUTH) {

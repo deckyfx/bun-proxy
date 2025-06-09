@@ -33,7 +33,7 @@ export class AuthMiddleware {
       return {
         id: "dev-user",
         email: "dev@localhost",
-        role: "admin"
+        role: "admin",
       };
     }
 
@@ -48,7 +48,7 @@ export class AuthMiddleware {
   generateTokens<T extends Record<string, any>>(data: T): TokenPair {
     return {
       accessToken: this.generateAccessToken(data),
-      refreshToken: this.generateRefreshToken(data)
+      refreshToken: this.generateRefreshToken(data),
     };
   }
 
@@ -60,7 +60,9 @@ export class AuthMiddleware {
     return jwt.sign(data, Config.JWT_REFRESH_SECRET, { expiresIn: "7d" });
   }
 
-  verifyAccessToken<T extends Record<string, any> = AuthUser>(token: string): T | null {
+  verifyAccessToken<T extends Record<string, any> = AuthUser>(
+    token: string
+  ): T | null {
     try {
       const decoded = jwt.verify(token, Config.JWT_ACCESS_SECRET) as T;
       return decoded;
@@ -69,7 +71,9 @@ export class AuthMiddleware {
     }
   }
 
-  verifyRefreshToken<T extends Record<string, any> = AuthUser>(token: string): T | null {
+  verifyRefreshToken<T extends Record<string, any> = AuthUser>(
+    token: string
+  ): T | null {
     try {
       const decoded = jwt.verify(token, Config.JWT_REFRESH_SECRET) as T;
       return decoded;
@@ -98,7 +102,7 @@ export class AuthMiddleware {
   createUnauthorizedResponse(message = "Unauthorized"): Response {
     return new Response(JSON.stringify({ error: message }), {
       status: 401,
-      headers: { "Content-Type": "application/json" }
+      headers: { "Content-Type": "application/json" },
     });
   }
 
@@ -107,9 +111,11 @@ export class AuthMiddleware {
   ) {
     return async (req: BunRequest, ...args: T): Promise<Response> => {
       const user = await this.authenticate(req);
+      console.log("fgdfdfdf", user);
       if (!user) {
         return this.createUnauthorizedResponse();
       }
+      console.log("fgdgf");
       return handler(req, user, ...args);
     };
   }
@@ -120,19 +126,27 @@ export const authMiddleware = AuthMiddleware.getInstance();
 export const Auth = AuthMiddleware.getInstance();
 
 // Export legacy functions for backward compatibility
-export function generateAccessToken<T extends Record<string, any>>(data: T): string {
+export function generateAccessToken<T extends Record<string, any>>(
+  data: T
+): string {
   return authMiddleware.generateAccessToken(data);
 }
 
-export function generateRefreshToken<T extends Record<string, any>>(data: T): string {
+export function generateRefreshToken<T extends Record<string, any>>(
+  data: T
+): string {
   return authMiddleware.generateRefreshToken(data);
 }
 
-export function verifyAccessToken<T extends Record<string, any> = any>(token: string): T | null {
+export function verifyAccessToken<T extends Record<string, any> = any>(
+  token: string
+): T | null {
   return authMiddleware.verifyAccessToken(token);
 }
 
-export function verifyRefreshToken<T extends Record<string, any> = any>(token: string): T | null {
+export function verifyRefreshToken<T extends Record<string, any> = any>(
+  token: string
+): T | null {
   return authMiddleware.verifyRefreshToken(token);
 }
 

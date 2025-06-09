@@ -22,10 +22,13 @@ export default function Index({ isAuthenticated }: IndexProps) {
           <link rel="stylesheet" href="/assets/styles/tailwind.css" />
         </head>
         <body className="min-h-screen bg-gray-50">
-          <div id="auth-root" className={`min-h-screen flex items-center justify-center px-4 ${isAuthenticated ? 'hidden' : 'flex'}`}>
+          <div id="auth-root" style={{ display: isAuthenticated ? 'none' : 'flex' }} className="min-h-screen items-center justify-center px-4">
             {!isAuthenticated && <AuthRouter />}
           </div>
-          <div id="dashboard-root" style={{ display: isAuthenticated ? 'block' : 'none' }}>
+          <div
+            id="dashboard-root"
+            style={{ display: isAuthenticated ? "block" : "none" }}
+          >
             {isAuthenticated && <DashboardRouter />}
           </div>
         </body>
