@@ -12,3 +12,5 @@ export { Tooltip } from './Tooltip';
 export { ErrorBoundary } from './ErrorBoundary';
 export { default as Table } from './Table';
 export type { TableColumn, TableProps } from './Table';
+export { Tabs } from './Tabs';
+export type { TabItem, TabsProps } from './Tabs';

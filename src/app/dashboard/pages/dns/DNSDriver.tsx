@@ -1,4 +1,4 @@
-import { Button, Card } from "@app/components/index";
+import { Button, Card, Tabs, type TabItem } from "@app/components/index";
 import { useEffect } from "react";
 import { useDnsDriverStore } from "@app/stores/dnsDriverStore";
 import LogsDriver from "./LogsDriver";
@@ -46,12 +46,37 @@ export default function DNSDriver() {
           </div>
         </Card>
       ) : (
-        <div className="space-y-6">
-          <LogsDriver drivers={drivers} loading={driversLoading} />
-          <CacheDriver drivers={drivers} loading={driversLoading} />
-          <BlacklistDriver drivers={drivers} loading={driversLoading} />
-          <WhitelistDriver drivers={drivers} loading={driversLoading} />
-        </div>
+        <Card title="DNS Drivers">
+          <Tabs
+            tabs={[
+              {
+                id: 'logs',
+                label: 'Logs',
+                icon: 'description',
+                content: <LogsDriver drivers={drivers} loading={driversLoading} />
+              },
+              {
+                id: 'cache',
+                label: 'Cache',
+                icon: 'memory',
+                content: <CacheDriver drivers={drivers} loading={driversLoading} />
+              },
+              {
+                id: 'blacklist',
+                label: 'Blacklist',
+                icon: 'block',
+                content: <BlacklistDriver drivers={drivers} loading={driversLoading} />
+              },
+              {
+                id: 'whitelist',
+                label: 'Whitelist',
+                icon: 'check_circle',
+                content: <WhitelistDriver drivers={drivers} loading={driversLoading} />
+              }
+            ]}
+            defaultTab="logs"
+          />
+        </Card>
       )}
     </>
   );

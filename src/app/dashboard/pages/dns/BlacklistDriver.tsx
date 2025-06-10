@@ -306,8 +306,7 @@ export default function BlacklistDriver({ drivers, loading }: BlacklistDriverPro
   const currentDriver = drivers?.current[DRIVER_TYPES.BLACKLIST];
 
   return (
-    <Card title="Blacklist">
-      <div className="space-y-4">
+    <div className="space-y-4">
         {/* Driver Configuration */}
         <div className="flex items-center gap-4">
           <div className="flex-1">
@@ -485,7 +484,6 @@ export default function BlacklistDriver({ drivers, loading }: BlacklistDriverPro
             }
           />
         </div>
-      </div>
-    </Card>
+    </div>
   );
 }

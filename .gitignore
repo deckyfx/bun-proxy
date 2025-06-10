@@ -48,3 +48,4 @@ bun-proxy
 # Log files
 server.log
 client.log
+report.pending.txt

@@ -1,16 +1,16 @@
 import {
   Button,
-  Card,
   Select,
-  Table,
+  Tabs,
   type TableColumn,
 } from "@app/components/index";
+import LogsStreamTab from "./LogsStreamTab";
+import LogsHistoryTab from "./LogsHistoryTab";
 import { useState, useEffect } from "react";
 import { DRIVER_TYPES } from "@src/types/driver";
 import type { LogEntry } from "@src/dns/drivers/logs/BaseDriver";
 import { useDnsLogStore } from "@app/stores/dnsLogStore";
 import { useDialogStore } from "@app/stores/dialogStore";
-import { useSnackbarStore } from "@app/stores/snackbarStore";
 import { useDnsCacheStore } from "@app/stores/dnsCacheStore";
 import { useDnsBlacklistStore } from "@app/stores/dnsBlacklistStore";
 import { useDnsWhitelistStore } from "@app/stores/dnsWhitelistStore";
@@ -191,7 +191,7 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
   const [driverForm, setDriverForm] = useState({ driver: "" });
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [connected, setConnected] = useState(false);
-  const [activeTab, setActiveTab] = useState<"stream" | "history">("stream");
+  // Removed activeTab state - now handled by Tabs component
   const [filters, setFilters] = useState({
     type: "",
     level: "",
@@ -202,23 +202,14 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
   });
 
   // Use driver stores
-  const { getContent, content, contentLoading, clearContent, setDriver } =
+  const { getContent, content, loading: historyLoading, error, clearContent, setDriver } =
     useDnsLogStore();
   const { addEntry: addToCache } = useDnsCacheStore();
   const { addEntry: addToBlacklist } = useDnsBlacklistStore();
   const { addEntry: addToWhitelist } = useDnsWhitelistStore();
   const { showConfirm, showCustom } = useDialogStore();
 
-  // Get history logs from logs driver store
-  const historyLogs = Array.isArray(content?.content)
-    ? (content.content as LogEntry[]).map((log) => ({
-        ...log,
-        timestamp:
-          typeof log.timestamp === "string"
-            ? new Date(log.timestamp)
-            : log.timestamp,
-      }))
-    : [];
+  // History logs are now handled by the LogsHistoryTab component
 
   useEffect(() => {
     if (drivers?.current?.logs) {
@@ -267,12 +258,7 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
     };
   }, []);
 
-  // Auto-fetch history when switching to history tab
-  useEffect(() => {
-    if (activeTab === "history") {
-      fetchLogHistory();
-    }
-  }, [activeTab]);
+  // History will be fetched when tab is opened or refresh button is clicked
 
   const handleDriverFormChange = (driver: string) => {
     setDriverForm({ driver });
@@ -582,8 +568,7 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
   const currentDriver = drivers?.current[DRIVER_TYPES.LOGS];
 
   return (
-    <Card title="Logs">
-      <div className="space-y-4">
+    <div className="space-y-4">
         {/* Driver Configuration */}
         <div className="flex items-center gap-4">
           <div className="flex-1">
@@ -636,242 +621,44 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
         </div>
 
         {/* Tab Interface */}
-        <div className="border border-gray-200 rounded-lg bg-white">
-          {/* Tab Headers */}
-          <div className="flex border-b border-gray-200">
-            <button
-              className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === "stream"
-                  ? "border-blue-500 text-blue-600 bg-blue-50"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-              }`}
-              onClick={() => setActiveTab("stream")}
-            >
-              <span className="flex items-center gap-2">
-                <span className="material-icons text-lg">stream</span>
-                Real-time Stream
-              </span>
-            </button>
-            <button
-              className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === "history"
-                  ? "border-blue-500 text-blue-600 bg-blue-50"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-              }`}
-              onClick={() => setActiveTab("history")}
-            >
-              <span className="flex items-center gap-2">
-                <span className="material-icons text-lg">history</span>
-                History
-              </span>
-            </button>
-          </div>
-          {/* Tab Content */}
-          {activeTab === "stream" ? (
-            <>
-              {/* Stream Tab Header */}
-              <div className="flex items-center justify-between p-4 border-b border-gray-200">
-                <div className="flex items-center gap-2 text-gray-700">
-                  <span className="material-icons text-lg">stream</span>
-                  <span className="font-medium">Real-time DNS Events</span>
-                  <span className="text-sm text-gray-500">
-                    ({logs.length}/100)
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div
-                    className={`w-2 h-2 rounded-full ${
-                      connected ? "bg-green-500" : "bg-red-500"
-                    }`}
-                  ></div>
-                  <span className="text-sm text-gray-500">
-                    {connected ? "Connected" : "Disconnected"}
-                  </span>
-                </div>
-              </div>
-
-              {/* Stream Table */}
-              <Table
-                columns={tableColumns}
-                data={logs}
-                rowClassName={(log: LogEntry) =>
-                  log.type === "server_event" ? "bg-yellow-50" : ""
-                }
-                emptyMessage={
-                  connected
-                    ? "No logs available. Start the DNS server to see activity."
-                    : "Connecting to log stream..."
-                }
-                onRowClick={(log) => handleRowClick(log)}
-              />
-            </>
-          ) : (
-            <>
-              {/* History Tab Header */}
-              <div className="flex items-center justify-between p-4 border-b border-gray-200">
-                <div className="flex items-center gap-2 text-gray-700">
-                  <span className="material-icons text-lg">history</span>
-                  <span className="font-medium">Log History</span>
-                  <span className="text-sm text-gray-500">
-                    ({historyLogs.length} entries)
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={clearFilters}
-                    disabled={contentLoading}
-                  >
-                    <span className="material-icons text-sm mr-1">clear</span>
-                    Clear Filters
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => fetchLogHistory()}
-                    disabled={contentLoading}
-                  >
-                    <span className="material-icons text-sm mr-1">filter_list</span>
-                    Apply Filters
-                  </Button>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={() => fetchLogHistory()}
-                    disabled={contentLoading}
-                  >
-                    <span className="material-icons text-sm mr-1">refresh</span>
-                    {contentLoading ? "Loading..." : "Refresh"}
-                  </Button>
-                </div>
-              </div>
-
-              {/* Filters */}
-              <div className="p-4 bg-gray-50 border-b border-gray-200">
-                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
-                  <div>
-                    <Select
-                      label="Type"
-                      value={filters.type}
-                      onChange={(value) =>
-                        setFilters((prev) => ({ ...prev, type: value }))
-                      }
-                      options={[
-                        { value: "", label: "All Types" },
-                        { value: "request", label: "Request" },
-                        { value: "response", label: "Response" },
-                        { value: "server_event", label: "Server Event" },
-                      ]}
-                    />
-                  </div>
-                  <div>
-                    <Select
-                      label="Level"
-                      value={filters.level}
-                      onChange={(value) =>
-                        setFilters((prev) => ({ ...prev, level: value }))
-                      }
-                      options={[
-                        { value: "", label: "All Levels" },
-                        { value: "info", label: "Info" },
-                        { value: "warn", label: "Warning" },
-                        { value: "error", label: "Error" },
-                        { value: "debug", label: "Debug" },
-                      ]}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Domain filter
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Domain filter..."
-                      value={filters.domain}
-                      onChange={(e) =>
-                        setFilters((prev) => ({
-                          ...prev,
-                          domain: e.target.value,
-                        }))
-                      }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Provider filter
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Provider filter..."
-                      value={filters.provider}
-                      onChange={(e) =>
-                        setFilters((prev) => ({
-                          ...prev,
-                          provider: e.target.value,
-                        }))
-                      }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <Select
-                      label="Success"
-                      value={filters.success}
-                      onChange={(value) =>
-                        setFilters((prev) => ({ ...prev, success: value }))
-                      }
-                      options={[
-                        { value: "", label: "All" },
-                        { value: "true", label: "Success" },
-                        { value: "false", label: "Failed" },
-                      ]}
-                    />
-                  </div>
-                  <div>
-                    <Select
-                      label="Limit"
-                      value={filters.limit.toString()}
-                      onChange={(value) =>
-                        setFilters((prev) => ({
-                          ...prev,
-                          limit: parseInt(value),
-                        }))
-                      }
-                      options={[
-                        { value: "50", label: "50" },
-                        { value: "100", label: "100" },
-                        { value: "250", label: "250" },
-                        { value: "500", label: "500" },
-                      ]}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* History Table */}
-              <Table
-                columns={tableColumns}
-                data={historyLogs}
-                rowClassName={(log: LogEntry) =>
-                  log.type === "server_event" ? "bg-yellow-50" : ""
-                }
-                loading={contentLoading}
-                loadingMessage="Loading history..."
-                emptyMessage={
-                  typeof content?.content === "string"
-                    ? content.content
-                    : currentDriver?.implementation === "console"
-                    ? "ConsoleDriver has no persistence. Switch to InMemoryDriver or FileDriver to view history."
-                    : "No history available. Click Refresh to load logs from the current driver."
-                }
-                onRowClick={(log) => handleRowClick(log)}
-              />
-            </>
-          )}
-        </div>
+        <Tabs
+          tabs={[
+            {
+              id: 'stream',
+              label: 'Real-time Stream',
+              icon: 'stream',
+              content: (
+                <LogsStreamTab
+                  logs={logs}
+                  connected={connected}
+                  tableColumns={tableColumns}
+                  onRowClick={handleRowClick}
+                />
+              )
+            },
+            {
+              id: 'history',
+              label: 'History',
+              icon: 'history',
+              content: (
+                <LogsHistoryTab
+                  content={(content as unknown) as LogEntry[]}
+                  loading={historyLoading}
+                  error={error ?? null}
+                  currentDriver={currentDriver}
+                  tableColumns={tableColumns}
+                  filters={filters}
+                  onFiltersChange={setFilters}
+                  onClearFilters={clearFilters}
+                  onFetchHistory={fetchLogHistory}
+                  onRowClick={handleRowClick}
+                />
+              )
+            }
+          ]}
+          defaultTab="stream"
+          className="border border-gray-200 rounded-lg bg-white"
+        />
       </div>
-    </Card>
-  );
-}
+    );
+  }

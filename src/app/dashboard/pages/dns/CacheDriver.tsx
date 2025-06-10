@@ -297,8 +297,7 @@ export default function CacheDriver({ drivers, loading }: CacheDriverProps) {
   const currentDriver = drivers?.current[DRIVER_TYPES.CACHE];
 
   return (
-    <Card title="Cache">
-      <div className="space-y-4">
+    <div className="space-y-4">
         {/* Driver Configuration */}
         <div className="flex items-center gap-4">
           <div className="flex-1">
@@ -448,7 +447,6 @@ export default function CacheDriver({ drivers, loading }: CacheDriverProps) {
             }
           />
         </div>
-      </div>
-    </Card>
+    </div>
   );
 }
