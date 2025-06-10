@@ -1,4 +1,5 @@
 import { dnsManager } from "@src/dns";
+import { dnsResolver } from "@src/dns/resolver";
 import { Auth, type AuthUser } from "@utils/auth";
 
 interface MetricsQuery {
@@ -57,8 +58,8 @@ export async function GetMetrics(req: Request, _user: AuthUser): Promise<Respons
     const timeRangeMs = timeRanges[range];
     const fromTime = new Date(now - timeRangeMs);
 
-    // Get drivers from server instance
-    const drivers = serverInstance.getDrivers();
+    // Get drivers from resolver
+    const drivers = dnsResolver.getDrivers();
     
     // Aggregate metrics from logs driver
     let queryMetrics = {

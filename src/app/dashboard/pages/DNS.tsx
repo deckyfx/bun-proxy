@@ -5,6 +5,7 @@ import { useDnsDriverStore } from "@app/stores/dnsDriverStore";
 import DNSControl from "./dns/DNSControl";
 import DNSConfig from "./dns/DNSConfig";
 import DNSDriver from "./dns/DNSDriver";
+import DNSTestTool from "./dns/DNSTestTool";
 
 export default function DNS() {
   const {
@@ -48,6 +49,7 @@ export default function DNS() {
         </div>
         <DNSControl />
         <DNSConfig />
+        <DNSTestTool />
         <DNSDriver />
       </div>
     </PageContainer>

@@ -1,13 +1,19 @@
-import { dnsManager } from "@src/dns/manager";
+import { dnsResolver } from "@src/dns/resolver";
+import { udpServerManager } from "@src/dns/udpServerManager";
 
 export async function handleDoHRequest(req: Request): Promise<Response> {
-  const server = dnsManager.getServerInstance();
-
-  if (!server) {
-    return new Response("DNS server not running", {
-      status: 503,
-      headers: { "Content-Type": "text/plain" },
-    });
+  // Ensure resolver is initialized (this will happen when the app starts)
+  // DoH doesn't need the UDP server to be running, just the resolver to be initialized
+  if (!dnsResolver.isInitialized()) {
+    // Try to trigger initialization through the server manager
+    await udpServerManager.reloadConfig();
+    
+    if (!dnsResolver.isInitialized()) {
+      return new Response("DNS resolver not initialized", {
+        status: 503,
+        headers: { "Content-Type": "text/plain" },
+      });
+    }
   }
 
   try {
@@ -67,23 +73,20 @@ export async function handleDoHRequest(req: Request): Promise<Response> {
       });
     }
 
-    // Create rinfo for DoH requests
-    const rinfo = {
+    // Create client info for DoH requests
+    const clientInfo = {
       address:
         req.headers.get("x-forwarded-for") ||
         req.headers.get("x-real-ip") ||
         "unknown",
       port: 443,
-      family: "IPv4",
+      transport: 'doh' as const,
     };
 
-    // Use existing DNS server logic
-    const dnsResponse = await (server as any).handleDNSRequest(
-      parsedQuery,
-      rinfo
-    );
+    // Use DNS resolver directly
+    const result = await dnsResolver.resolve(dnsQuery, clientInfo);
 
-    return new Response(dnsResponse, {
+    return new Response(result.responseBuffer, {
       status: 200,
       headers: {
         "Content-Type": "application/dns-message",

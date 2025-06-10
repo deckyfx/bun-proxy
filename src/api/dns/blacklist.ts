@@ -1,4 +1,5 @@
 import { dnsManager } from "@src/dns/manager";
+import { dnsResolver } from "@src/dns/resolver";
 import { Auth, type AuthUser } from "@utils/auth";
 import { DRIVER_TYPES, DRIVER_METHODS, type DriverConfig, type DriverContentResponse } from "@src/types/driver";
 import { dnsEventService } from "@src/dns/DNSEventService";
@@ -87,22 +88,11 @@ async function setBlacklistDriver(config: DriverConfig): Promise<Response> {
     await dnsManager.updateDriverConfiguration(updatedDrivers);
     
     const status = dnsManager.getStatus();
-    let driverUpdated = false;
-    
-    if (status.enabled && status.server) {
-      const server = dnsManager.getServerInstance();
-      if (server) {
-        server.setBlacklistDriver(newDriverInstance);
-        driverUpdated = true;
-      }
-    }
-    
     return createSuccessResponse({
       message: `Blacklist driver successfully changed to ${config.driver}`,
       scope: config.scope,
       driver: config.driver,
       options: config.options,
-      hotSwapped: driverUpdated,
       serverRunning: status.enabled
     });
   } catch (error) {

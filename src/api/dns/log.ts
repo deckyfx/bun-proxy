@@ -74,23 +74,13 @@ async function setLogsDriver(config: DriverConfig): Promise<Response> {
     const updatedDrivers = { ...currentDrivers, logs: newDriverInstance };
     await dnsManager.updateDriverConfiguration(updatedDrivers);
     
+    // Driver configuration is handled by updateDriverConfiguration above
     const status = dnsManager.getStatus();
-    let driverUpdated = false;
-    
-    if (status.enabled && status.server) {
-      const server = dnsManager.getServerInstance();
-      if (server) {
-        server.setLogDriver(newDriverInstance);
-        driverUpdated = true;
-      }
-    }
-    
     return createSuccessResponse({
       message: `Logs driver successfully changed to ${config.driver}`,
       scope: config.scope,
       driver: config.driver,
       options: config.options,
-      hotSwapped: driverUpdated,
       serverRunning: status.enabled
     });
   } catch (error) {

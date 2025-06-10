@@ -15,9 +15,11 @@
     "migrate": "bun run src/db/migrations/index.ts",
     "seed": "bun run src/db/seeds/index.ts",
     "setup-db": "bun run drizzle && bun run migrate && bun run seed",
-    "test:hit": "bun run tests/test-dns.ts",
+    "test:udp": "bun run tests/test-udp.ts",
+    "test:doh": "bun run tests/test-doh.ts",
     "test:sse": "bun run tests/test-sse.ts",
-    "test:serverhit": "bun dev > ./server.log 2>&1 & DEV_PID=$!; bun test:hit > ./client.log 2>&1; kill $DEV_PID"
+    "test:hitudp": "bun dev > ./server.log 2>&1 & DEV_PID=$!; bun test:udp > ./client.log 2>&1; kill $DEV_PID",
+    "test:hitdoh": "bun dev > ./server.log 2>&1 & DEV_PID=$!; bun test:doh > ./client.log 2>&1; kill $DEV_PID"
   },
   "dependencies": {
     "@types/dns2": "^2.0.9",
