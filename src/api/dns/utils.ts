@@ -118,10 +118,31 @@ export function createSuccessResponse(data: any): Response {
 export function checkServerAvailability(): Response | null {
   const status = dnsManager.getStatus();
   
+  // If server is running, check for server instance
+  if (status.server) {
+    const serverInstance = dnsManager.getServerInstance();
+    if (!serverInstance) {
+      return createErrorResponse(
+        'Cannot access server drivers',
+        'Server instance not available',
+        503
+      );
+    }
+  }
+  
+  // Server can be stopped - we'll use lastUsedDrivers for safe operations
+  // The getDrivers() function handles both running and stopped states
+  return null;
+}
+
+// More restrictive check for operations that truly need the server running
+export function checkServerRunning(): Response | null {
+  const status = dnsManager.getStatus();
+  
   if (!status.server) {
     return createErrorResponse(
-      'Cannot access driver',
-      'DNS server must be running to access driver content',
+      'Server not running',
+      'DNS server must be running for this operation',
       503
     );
   }

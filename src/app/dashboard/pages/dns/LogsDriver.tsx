@@ -276,12 +276,7 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
   const handleSetDriver = async () => {
     await setDriver(driverForm.driver);
     // Success case will be handled by the driver store showing a snackbar
-    // Update the form to reflect the new driver after change
-    if (drivers?.current?.logs) {
-      setDriverForm({
-        driver: drivers.current.logs.implementation || driverForm.driver,
-      });
-    }
+    // No need to update form as it should stay with the selected value
   };
 
   const handleClearLogs = async () => {

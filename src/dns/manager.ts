@@ -11,6 +11,8 @@ import { ConsoleDriver } from "./drivers/logs/ConsoleDriver";
 import { InMemoryDriver as CacheInMemoryDriver } from "./drivers/caches/InMemoryDriver";
 import { InMemoryDriver as BlacklistInMemoryDriver } from "./drivers/blacklist/InMemoryDriver";
 import { InMemoryDriver as WhitelistInMemoryDriver } from "./drivers/whitelist/InMemoryDriver";
+import { DNSConfigService, type DNSPersistentConfig } from "./config";
+import { createDriverInstance } from "./drivers";
 
 class DNSManager {
   private static instance: DNSManager;
@@ -18,15 +20,42 @@ class DNSManager {
   private isEnabled: boolean = false;
   private currentNextDnsConfigId?: string;
   private lastUsedDrivers: DNSServerDrivers;
+  private configService: DNSConfigService;
+  private persistentConfig?: DNSPersistentConfig;
 
   private constructor() {
-    // Initialize default drivers configuration - logs: Console, others: InMemory
+    this.configService = DNSConfigService.getInstance();
+    // Initialize default drivers configuration - will be overridden by loadConfig
     this.lastUsedDrivers = {
       logs: new ConsoleDriver(),
       cache: new CacheInMemoryDriver(),
       blacklist: new BlacklistInMemoryDriver(),
       whitelist: new WhitelistInMemoryDriver(),
     };
+    
+    // Load persistent configuration asynchronously
+    this.initializeConfig();
+  }
+
+  private async initializeConfig(): Promise<void> {
+    try {
+      this.persistentConfig = await this.configService.loadConfig();
+      
+      // Apply server configuration
+      this.currentNextDnsConfigId = this.persistentConfig.server.nextdnsConfigId;
+      
+      // Create driver instances from persistent config
+      this.lastUsedDrivers = {
+        logs: await createDriverInstance('logs', this.persistentConfig.drivers.logs.type, this.persistentConfig.drivers.logs.options),
+        cache: await createDriverInstance('caches', this.persistentConfig.drivers.cache.type, this.persistentConfig.drivers.cache.options),
+        blacklist: await createDriverInstance('blacklist', this.persistentConfig.drivers.blacklist.type, this.persistentConfig.drivers.blacklist.options),
+        whitelist: await createDriverInstance('whitelist', this.persistentConfig.drivers.whitelist.type, this.persistentConfig.drivers.whitelist.options),
+      };
+      
+      console.log('DNS configuration loaded from persistent storage');
+    } catch (error) {
+      console.warn('Failed to load persistent DNS config, using defaults:', error);
+    }
   }
 
   static getInstance(): DNSManager {
@@ -49,10 +78,20 @@ class DNSManager {
       throw new Error("DNS server is already running");
     }
 
-    // Use provided config ID or fall back to environment variable
+    // Ensure configuration is loaded
+    if (!this.persistentConfig) {
+      await this.initializeConfig();
+    }
+
+    // Use provided config or persistent config or fall back to environment variable
     const nextdnsConfigId =
-      options?.nextdnsConfigId || config.NEXTDNS_CONFIG_ID;
+      options?.nextdnsConfigId || 
+      this.persistentConfig?.server.nextdnsConfigId || 
+      config.NEXTDNS_CONFIG_ID;
     this.currentNextDnsConfigId = nextdnsConfigId;
+
+    // Use provided port or persistent config or fall back to environment/config
+    const serverPort = port || this.persistentConfig?.server.port || config.DNS_PORT;
 
     const providers = [
       new NextDNSProvider(nextdnsConfigId),
@@ -67,12 +106,45 @@ class DNSManager {
       this.lastUsedDrivers = { ...this.lastUsedDrivers, ...drivers };
     }
 
-    this.server = new DNSProxyServer(port || config.DNS_PORT, providers, this.lastUsedDrivers);
+    this.server = new DNSProxyServer(serverPort, providers, this.lastUsedDrivers);
     await this.server.start();
     this.isEnabled = true;
+
+    // Save current configuration to persistent storage
+    await this.saveCurrentConfiguration(serverPort, options);
     
     // Notify SSE clients of status change
     this.notifyStatusChange();
+  }
+
+  private async saveCurrentConfiguration(
+    port: number,
+    options?: {
+      enableWhitelist?: boolean;
+      secondaryDns?: string;
+      nextdnsConfigId?: string;
+    }
+  ): Promise<void> {
+    try {
+      // Save server configuration
+      await this.configService.saveServerConfig({
+        port,
+        nextdnsConfigId: this.currentNextDnsConfigId,
+        enableWhitelist: options?.enableWhitelist ?? this.persistentConfig?.server.enableWhitelist ?? false,
+        secondaryDns: options?.secondaryDns as any ?? this.persistentConfig?.server.secondaryDns ?? 'cloudflare',
+      });
+
+      // Save driver configuration
+      const driversConfig = {
+        logs: { type: (this.lastUsedDrivers.logs?.constructor as any)?.DRIVER_NAME || 'console', options: {} },
+        cache: { type: (this.lastUsedDrivers.cache?.constructor as any)?.DRIVER_NAME || 'inmemory', options: {} },
+        blacklist: { type: (this.lastUsedDrivers.blacklist?.constructor as any)?.DRIVER_NAME || 'inmemory', options: {} },
+        whitelist: { type: (this.lastUsedDrivers.whitelist?.constructor as any)?.DRIVER_NAME || 'inmemory', options: {} },
+      };
+      await this.configService.saveDriversConfig(driversConfig);
+    } catch (error) {
+      console.warn('Failed to save DNS configuration:', error);
+    }
   }
 
   async stop(): Promise<void> {
@@ -125,14 +197,44 @@ class DNSManager {
     return this.lastUsedDrivers;
   }
 
-  updateDriverConfiguration(drivers: Partial<DNSServerDrivers>): void {
+  async updateDriverConfiguration(drivers: Partial<DNSServerDrivers>): Promise<void> {
     this.lastUsedDrivers = { ...this.lastUsedDrivers, ...drivers };
+    
+    // Save driver configuration changes to persistent storage
+    try {
+      const driversConfig = {
+        logs: { type: (this.lastUsedDrivers.logs?.constructor as any)?.DRIVER_NAME || 'console', options: {} },
+        cache: { type: (this.lastUsedDrivers.cache?.constructor as any)?.DRIVER_NAME || 'inmemory', options: {} },
+        blacklist: { type: (this.lastUsedDrivers.blacklist?.constructor as any)?.DRIVER_NAME || 'inmemory', options: {} },
+        whitelist: { type: (this.lastUsedDrivers.whitelist?.constructor as any)?.DRIVER_NAME || 'inmemory', options: {} },
+      };
+      await this.configService.saveDriversConfig(driversConfig);
+    } catch (error) {
+      console.warn('Failed to save driver configuration:', error);
+    }
+    
     this.notifyConfigChange();
   }
 
-  setNextDnsConfigId(configId: string): void {
+  async setNextDnsConfigId(configId: string): Promise<void> {
     this.currentNextDnsConfigId = configId;
+    
+    // Save NextDNS config ID to persistent storage
+    try {
+      await this.configService.saveServerConfig({ nextdnsConfigId: configId });
+    } catch (error) {
+      console.warn('Failed to save NextDNS config ID:', error);
+    }
+    
     this.notifyConfigChange();
+  }
+
+  getPersistentConfig(): DNSPersistentConfig | undefined {
+    return this.persistentConfig;
+  }
+
+  async reloadConfig(): Promise<void> {
+    await this.initializeConfig();
   }
 
   private notifyStatusChange(): void {

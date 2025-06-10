@@ -83,7 +83,7 @@ async function setWhitelistDriver(config: DriverConfig): Promise<Response> {
     const currentDrivers = dnsManager.getLastUsedDrivers();
     
     const updatedDrivers = { ...currentDrivers, whitelist: newDriverInstance };
-    dnsManager.updateDriverConfiguration(updatedDrivers);
+    await dnsManager.updateDriverConfiguration(updatedDrivers);
     
     const status = dnsManager.getStatus();
     let driverUpdated = false;

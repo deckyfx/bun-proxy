@@ -42,3 +42,9 @@ logs_test.json
 get_driver_test.json
 set_driver_test.json
 bun-proxy
+
+# Data directory
+!data/.gitkeep
+# Log files
+server.log
+client.log

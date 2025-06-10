@@ -1,0 +1,7 @@
+# Keep this directory in git
+# The data directory contains:
+# - Database files (data.db)
+# - DNS configuration (dns-config.json)
+# - Driver data files (blacklist/, whitelist/, cache/, logs/)
+
+# Note: Actual data files should be gitignored for security

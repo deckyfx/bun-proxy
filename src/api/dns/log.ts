@@ -72,7 +72,7 @@ async function setLogsDriver(config: DriverConfig): Promise<Response> {
     const currentDrivers = dnsManager.getLastUsedDrivers();
     
     const updatedDrivers = { ...currentDrivers, logs: newDriverInstance };
-    dnsManager.updateDriverConfiguration(updatedDrivers);
+    await dnsManager.updateDriverConfiguration(updatedDrivers);
     
     const status = dnsManager.getStatus();
     let driverUpdated = false;

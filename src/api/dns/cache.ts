@@ -79,7 +79,7 @@ async function setCacheDriver(config: DriverConfig): Promise<Response> {
     const currentDrivers = dnsManager.getLastUsedDrivers();
     
     const updatedDrivers = { ...currentDrivers, cache: newDriverInstance };
-    dnsManager.updateDriverConfiguration(updatedDrivers);
+    await dnsManager.updateDriverConfiguration(updatedDrivers);
     
     const status = dnsManager.getStatus();
     let driverUpdated = false;

@@ -83,7 +83,7 @@ async function setBlacklistDriver(config: DriverConfig): Promise<Response> {
     const currentDrivers = dnsManager.getLastUsedDrivers();
     
     const updatedDrivers = { ...currentDrivers, blacklist: newDriverInstance };
-    dnsManager.updateDriverConfiguration(updatedDrivers);
+    await dnsManager.updateDriverConfiguration(updatedDrivers);
     
     const status = dnsManager.getStatus();
     let driverUpdated = false;

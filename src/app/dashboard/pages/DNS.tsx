@@ -17,6 +17,7 @@ export default function DNS() {
 
   const {
     fetchDrivers,
+    connectSSE: connectDriverSSE,
   } = useDnsDriverStore();
 
   useEffect(() => {
@@ -27,10 +28,12 @@ export default function DNS() {
 
     // Connect to SSE for real-time updates
     connectSSE();
+    const unsubscribeDriverSSE = connectDriverSSE();
 
     // Cleanup on unmount
     return () => {
       disconnectSSE();
+      unsubscribeDriverSSE();
     };
   }, []); // Empty dependency array - run only once on mount
 
