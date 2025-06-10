@@ -2,7 +2,8 @@
 
 /**
  * DNS-over-HTTPS (DoH) Test Script
- * Tests DoH resolution using the local DoH endpoint
+ * Tests DoH resolution using the smart root endpoint (/)
+ * The server auto-detects DoH requests and routes them appropriately
  * Follows RFC 8484 standard for DNS-over-HTTPS
  */
 
@@ -10,7 +11,7 @@
 const DASHBOARD_PORT = process.env.DASHBOARD_PORT || 3000;
 const DOH_HOST = "localhost";
 const DOH_PORT = DASHBOARD_PORT;
-const DOH_PATH = "/doh";
+const DOH_PATH = "/";
 
 async function waitForHealth(
   url: string,
@@ -326,7 +327,8 @@ async function main() {
   console.log("🚀 DNS-over-HTTPS (DoH) Test Suite");
   console.log("====================================");
   console.log(`🎯 Target: http://${DOH_HOST}:${DOH_PORT}${DOH_PATH}`);
-  console.log(`📋 RFC 8484 compliant testing\n`);
+  console.log(`📋 RFC 8484 compliant testing (smart root endpoint)`);
+  console.log(`📋 Server auto-detects DoH vs Dashboard requests\n`);
 
   await checkHealth();
 

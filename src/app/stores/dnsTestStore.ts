@@ -258,7 +258,7 @@ export const useDNSTestStore = create<DNSTestStore>((set, get) => ({
       if (method === 'POST') {
         // DoH POST with binary DNS query
         const query = createDNSQuery(domain);
-        const response = await fetch('/doh', {
+        const response = await fetch('/', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/dns-message',
@@ -289,7 +289,7 @@ export const useDNSTestStore = create<DNSTestStore>((set, get) => ({
         const base64 = btoa(String.fromCharCode(...query));
         const base64url = base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
         
-        const response = await fetch(`/doh?dns=${base64url}`, {
+        const response = await fetch(`/?dns=${base64url}`, {
           method: 'GET',
           headers: { 'Accept': 'application/dns-message' }
         });

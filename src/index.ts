@@ -4,7 +4,6 @@ import { dnsManager } from "@src/dns";
 import IndexRoute from "./view/index";
 import HydrateRoute from "./view/hydrate";
 import ApiRoute from "./api/index";
-import doh from "./doh";
 
 // Graceful shutdown handling
 process.on("SIGINT", async () => {
@@ -41,10 +40,9 @@ export default Bun.serve({
     console: true,
   },
   routes: {
-    "/": IndexRoute,
+    "/": IndexRoute, // Smart route that auto-detects DoH vs Dashboard
     "/hydrate": HydrateRoute,
     "/api/:scope/:command": ApiRoute,
-    "/doh": doh,
     "/favicon.ico": {
       GET: async () => {
         try {
