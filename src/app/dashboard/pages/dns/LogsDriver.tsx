@@ -11,6 +11,9 @@ import type { LogEntry } from "@src/dns/drivers/logs/BaseDriver";
 import { useDnsLogStore } from "@app/stores/dnsLogStore";
 import { useDialogStore } from "@app/stores/dialogStore";
 import { useSnackbarStore } from "@app/stores/snackbarStore";
+import { useDnsCacheStore } from "@app/stores/dnsCacheStore";
+import { useDnsBlacklistStore } from "@app/stores/dnsBlacklistStore";
+import { useDnsWhitelistStore } from "@app/stores/dnsWhitelistStore";
 import { sseClient } from "@src/utils/SSEClient";
 
 interface LogsDriverProps {
@@ -198,11 +201,13 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
     limit: 100,
   });
 
-  // Use new logs driver store
+  // Use driver stores
   const { getContent, content, contentLoading, clearContent, setDriver } =
     useDnsLogStore();
+  const { addEntry: addToCache } = useDnsCacheStore();
+  const { addEntry: addToBlacklist } = useDnsBlacklistStore();
+  const { addEntry: addToWhitelist } = useDnsWhitelistStore();
   const { showConfirm, showCustom } = useDialogStore();
-  const { showInfo, showAlert } = useSnackbarStore();
 
   // Get history logs from logs driver store
   const historyLogs = Array.isArray(content?.content)
@@ -508,32 +513,22 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
 
   // Handler to add domain to cache
   const handleAddToCache = async (domain: string) => {
-    try {
-      // This would typically call an API to add to cache
-      showInfo(`Added "${domain}" to cache`);
-    } catch (error) {
-      showAlert("Failed to add to cache", "Cache Error");
-    }
+    const cacheValue = {
+      cached: true,
+      addedFrom: 'logs',
+      timestamp: new Date().toISOString()
+    };
+    await addToCache(domain, cacheValue, 3600); // 1 hour TTL
   };
 
   // Handler to add domain to blacklist
   const handleAddToBlacklist = async (domain: string) => {
-    try {
-      // This would typically call an API to add to blacklist
-      showInfo(`Added "${domain}" to blacklist`);
-    } catch (error) {
-      showAlert("Failed to add to blacklist", "Blacklist Error");
-    }
+    await addToBlacklist(domain, 'Added from DNS logs', 'logs');
   };
 
   // Handler to add domain to whitelist
   const handleAddToWhitelist = async (domain: string) => {
-    try {
-      // This would typically call an API to add to whitelist
-      showInfo(`Added "${domain}" to whitelist`);
-    } catch (error) {
-      showAlert("Failed to add to whitelist", "Whitelist Error");
-    }
+    await addToWhitelist(domain, 'Added from DNS logs', 'logs');
   };
 
   // Clear all filters

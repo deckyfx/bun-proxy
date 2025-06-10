@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { DRIVER_METHODS, type DriverConfig, type DriverContentResponse } from '@src/types/driver';
 import { api } from '@app/utils/fetchUtils';
 import { sseClient } from '@src/utils/SSEClient';
+import { useSnackbarStore } from './snackbarStore';
 
 interface DnsBlacklistStore {
   // State
@@ -17,6 +18,8 @@ interface DnsBlacklistStore {
   getContent: (filter?: Record<string, any>) => Promise<void>;
   setDriver: (driver: string, options?: Record<string, any>) => Promise<void>;
   clearContent: () => Promise<void>;
+  addEntry: (domain: string, reason?: string, category?: string) => Promise<boolean>;
+  removeEntry: (domain: string) => Promise<boolean>;
   clearError: () => void;
   connectSSE: () => void;
   disconnectSSE: () => void;
@@ -118,6 +121,61 @@ export const useDnsBlacklistStore = create<DnsBlacklistStore>((set, get) => ({
       console.error('Failed to clear blacklist:', error);
     } finally {
       set({ loading: false });
+    }
+  },
+
+  addEntry: async (domain: string, reason?: string, category?: string) => {
+    try {
+      // First check if entry already exists
+      const checkConfig: Partial<DriverConfig> = {
+        method: DRIVER_METHODS.GET,
+        key: domain
+      };
+
+      const checkResult = await api.post('/api/dns/blacklist', checkConfig);
+      if (checkResult.content === true) {
+        useSnackbarStore.getState().showAlert(`Domain "${domain}" is already in blacklist`, "Duplicate Entry");
+        return false;
+      }
+
+      // Add the entry
+      const addConfig: Partial<DriverConfig> = {
+        method: DRIVER_METHODS.ADD,
+        key: domain,
+        reason: reason || 'Added from DNS logs',
+        category: category || 'logs'
+      };
+
+      await api.post('/api/dns/blacklist', addConfig, {
+        showSuccess: true,
+        successMessage: `Added "${domain}" to blacklist`
+      });
+      
+      return true;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to add blacklist entry';
+      useSnackbarStore.getState().showAlert(errorMessage, "Blacklist Error");
+      return false;
+    }
+  },
+
+  removeEntry: async (domain: string) => {
+    try {
+      const config: Partial<DriverConfig> = {
+        method: DRIVER_METHODS.REMOVE,
+        key: domain
+      };
+
+      await api.post('/api/dns/blacklist', config, {
+        showSuccess: true,
+        successMessage: `Removed "${domain}" from blacklist`
+      });
+      
+      return true;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to remove blacklist entry';
+      useSnackbarStore.getState().showAlert(errorMessage, "Blacklist Error");
+      return false;
     }
   },
 

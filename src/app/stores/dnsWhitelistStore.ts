@@ -18,6 +18,8 @@ interface DnsWhitelistStore {
   getContent: (filter?: Record<string, any>) => Promise<void>;
   setDriver: (driver: string, options?: Record<string, any>) => Promise<void>;
   clearContent: () => Promise<void>;
+  addEntry: (domain: string, reason?: string, category?: string) => Promise<boolean>;
+  removeEntry: (domain: string) => Promise<boolean>;
   clearError: () => void;
   connectSSE: () => void;
   disconnectSSE: () => void;
@@ -121,6 +123,61 @@ export const useDnsWhitelistStore = create<DnsWhitelistStore>((set, get) => ({
       useSnackbarStore.getState().showAlert(errorMessage, 'Clear Whitelist Error');
     } finally {
       set({ loading: false });
+    }
+  },
+
+  addEntry: async (domain: string, reason?: string, category?: string) => {
+    try {
+      // First check if entry already exists
+      const checkConfig: Partial<DriverConfig> = {
+        method: DRIVER_METHODS.GET,
+        key: domain
+      };
+
+      const checkResult = await api.post('/api/dns/whitelist', checkConfig);
+      if (checkResult.content === true) {
+        useSnackbarStore.getState().showAlert(`Domain "${domain}" is already in whitelist`, "Duplicate Entry");
+        return false;
+      }
+
+      // Add the entry
+      const addConfig: Partial<DriverConfig> = {
+        method: DRIVER_METHODS.ADD,
+        key: domain,
+        reason: reason || 'Added from DNS logs',
+        category: category || 'logs'
+      };
+
+      await api.post('/api/dns/whitelist', addConfig, {
+        showSuccess: true,
+        successMessage: `Added "${domain}" to whitelist`
+      });
+      
+      return true;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to add whitelist entry';
+      useSnackbarStore.getState().showAlert(errorMessage, "Whitelist Error");
+      return false;
+    }
+  },
+
+  removeEntry: async (domain: string) => {
+    try {
+      const config: Partial<DriverConfig> = {
+        method: DRIVER_METHODS.REMOVE,
+        key: domain
+      };
+
+      await api.post('/api/dns/whitelist', config, {
+        showSuccess: true,
+        successMessage: `Removed "${domain}" from whitelist`
+      });
+      
+      return true;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to remove whitelist entry';
+      useSnackbarStore.getState().showAlert(errorMessage, "Whitelist Error");
+      return false;
     }
   },
 

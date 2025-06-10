@@ -18,6 +18,8 @@ interface DnsCacheStore {
   getContent: (filter?: Record<string, any>) => Promise<void>;
   setDriver: (driver: string, options?: Record<string, any>) => Promise<void>;
   clearContent: () => Promise<void>;
+  addEntry: (key: string, value: any, ttl?: number) => Promise<boolean>;
+  removeEntry: (key: string) => Promise<boolean>;
   clearError: () => void;
   connectSSE: () => void;
   disconnectSSE: () => void;
@@ -118,6 +120,61 @@ export const useDnsCacheStore = create<DnsCacheStore>((set, get) => ({
       console.error('Failed to clear cache:', error);
     } finally {
       set({ loading: false });
+    }
+  },
+
+  addEntry: async (key: string, value: any, ttl?: number) => {
+    try {
+      // First check if entry already exists
+      const checkConfig: Partial<DriverConfig> = {
+        method: DRIVER_METHODS.GET,
+        key
+      };
+
+      const checkResult = await api.post('/api/dns/cache', checkConfig);
+      if (checkResult.content !== null) {
+        useSnackbarStore.getState().showAlert(`Cache entry "${key}" already exists`, "Duplicate Entry");
+        return false;
+      }
+
+      // Add the entry
+      const addConfig: Partial<DriverConfig> = {
+        method: DRIVER_METHODS.ADD,
+        key,
+        value,
+        ttl
+      };
+
+      await api.post('/api/dns/cache', addConfig, {
+        showSuccess: true,
+        successMessage: `Added "${key}" to cache`
+      });
+      
+      return true;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to add cache entry';
+      useSnackbarStore.getState().showAlert(errorMessage, "Cache Error");
+      return false;
+    }
+  },
+
+  removeEntry: async (key: string) => {
+    try {
+      const config: Partial<DriverConfig> = {
+        method: DRIVER_METHODS.REMOVE,
+        key
+      };
+
+      await api.post('/api/dns/cache', config, {
+        showSuccess: true,
+        successMessage: `Removed "${key}" from cache`
+      });
+      
+      return true;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to remove cache entry';
+      useSnackbarStore.getState().showAlert(errorMessage, "Cache Error");
+      return false;
     }
   },
 

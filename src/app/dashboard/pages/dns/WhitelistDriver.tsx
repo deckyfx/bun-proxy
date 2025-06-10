@@ -1,16 +1,135 @@
-import { Button, Card, Select } from "@app/components/index";
+import { Button, Card, Select, Table, type TableColumn, FloatingLabelInput } from "@app/components/index";
 import { useState, useEffect } from "react";
 import { DRIVER_TYPES } from "@src/types/driver";
 import { useDnsWhitelistStore } from "@app/stores/dnsWhitelistStore";
+import { useDialogStore } from "@app/stores/dialogStore";
 
 interface WhitelistDriverProps {
   drivers: any;
   loading: boolean;
 }
 
+interface WhitelistEntry {
+  domain: string;
+  reason?: string;
+  category?: string;
+  addedAt?: string;
+  source?: string;
+}
+
+const formatDriverName = (name: string): string => {
+  if (!name) return "Unknown";
+
+  const specialCases: Record<string, string> = {
+    inmemory: "InMemory",
+    file: "File",
+    sqlite: "SQLite",
+  };
+
+  return (
+    specialCases[name.toLowerCase()] ||
+    name.charAt(0).toUpperCase() + name.slice(1)
+  );
+};
+
+const tableColumns: TableColumn<WhitelistEntry>[] = [
+  {
+    key: "domain",
+    label: "Domain",
+    className: "font-mono",
+    render: (value: string) => (
+      <div className="max-w-48 truncate" title={value}>
+        {value}
+      </div>
+    ),
+  },
+  {
+    key: "reason",
+    label: "Reason",
+    render: (value: string | undefined) => (
+      <div className="max-w-32 truncate" title={value}>
+        {value || <span className="text-gray-400">No reason</span>}
+      </div>
+    ),
+  },
+  {
+    key: "category",
+    label: "Category",
+    render: (value: string | undefined) => {
+      if (!value) return <span className="text-gray-400">-</span>;
+      
+      const categoryColors: Record<string, string> = {
+        banking: "bg-green-100 text-green-800",
+        education: "bg-blue-100 text-blue-800",
+        work: "bg-purple-100 text-purple-800",
+        essential: "bg-indigo-100 text-indigo-800",
+        trusted: "bg-emerald-100 text-emerald-800",
+        logs: "bg-gray-100 text-gray-800",
+        manual: "bg-yellow-100 text-yellow-800",
+      };
+      
+      const colorClass = categoryColors[value.toLowerCase()] || "bg-gray-100 text-gray-800";
+      
+      return (
+        <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${colorClass}`}>
+          {value}
+        </span>
+      );
+    },
+  },
+  {
+    key: "source",
+    label: "Source",
+    render: (value: string | undefined) => {
+      if (!value) return <span className="text-gray-400">-</span>;
+      
+      const sourceIcons: Record<string, string> = {
+        manual: "person",
+        import: "upload",
+        logs: "description",
+        api: "api",
+      };
+      
+      const icon = sourceIcons[value.toLowerCase()] || "help";
+      
+      return (
+        <div className="flex items-center gap-1">
+          <span className="material-icons text-sm text-gray-500">{icon}</span>
+          <span className="text-sm capitalize">{value}</span>
+        </div>
+      );
+    },
+  },
+  {
+    key: "addedAt",
+    label: "Added",
+    render: (value: string | undefined) => {
+      if (!value) return <span className="text-gray-400">-</span>;
+      return (
+        <span className="text-sm text-gray-600">
+          {new Date(value).toLocaleString()}
+        </span>
+      );
+    },
+  },
+];
+
 export default function WhitelistDriver({ drivers, loading }: WhitelistDriverProps) {
   const [driverForm, setDriverForm] = useState({ driver: '' });
-  const { setDriver } = useDnsWhitelistStore();
+  const [newEntry, setNewEntry] = useState({ domain: '', reason: '', category: 'manual' });
+  const [filters, setFilters] = useState({ domain: '', category: '', source: '', reason: '' });
+  const { 
+    setDriver, 
+    getContent, 
+    content, 
+    contentLoading, 
+    clearContent, 
+    addEntry, 
+    removeEntry,
+    connectSSE, 
+    disconnectSSE 
+  } = useDnsWhitelistStore();
+  const { showConfirm } = useDialogStore();
 
   useEffect(() => {
     if (drivers?.current?.whitelist) {
@@ -20,15 +139,79 @@ export default function WhitelistDriver({ drivers, loading }: WhitelistDriverPro
     }
   }, [drivers]);
 
+  // Connect to SSE only for data change events
+  useEffect(() => {
+    connectSSE();
+    return () => disconnectSSE();
+  }, [connectSSE, disconnectSSE]);
+
   const handleDriverFormChange = (driver: string) => {
     setDriverForm({ driver });
   };
 
   const handleSetDriver = async () => {
-    try {
-      await setDriver(driverForm.driver);
-    } catch (error) {
-      // Error handling is done in the store
+    await setDriver(driverForm.driver);
+  };
+
+  const fetchWhitelistContent = async (customFilters?: typeof filters) => {
+    const currentFilters = customFilters || filters;
+    const filterConfig = {
+      ...(currentFilters.domain && { domain: currentFilters.domain }),
+      ...(currentFilters.category && { category: currentFilters.category }),
+      ...(currentFilters.source && { source: currentFilters.source }),
+      ...(currentFilters.reason && { reason: currentFilters.reason }),
+    };
+    await getContent(filterConfig);
+  };
+
+  const handleClearWhitelist = async () => {
+    const confirmed = await showConfirm(
+      "Are you sure you want to clear all whitelist entries? This action cannot be undone.",
+      {
+        title: "Clear Whitelist",
+        confirmText: "Clear All",
+        cancelText: "Cancel",
+      }
+    );
+
+    if (confirmed) {
+      await clearContent();
+      await fetchWhitelistContent();
+    }
+  };
+
+  const handleAddEntry = async () => {
+    if (!newEntry.domain) {
+      return;
+    }
+
+    const success = await addEntry(
+      newEntry.domain, 
+      newEntry.reason || 'Manually added', 
+      newEntry.category || 'manual'
+    );
+    
+    if (success) {
+      setNewEntry({ domain: '', reason: '', category: 'manual' });
+      await fetchWhitelistContent();
+    }
+  };
+
+  const handleRemoveEntry = async (domain: string) => {
+    const confirmed = await showConfirm(
+      `Are you sure you want to remove "${domain}" from the whitelist?`,
+      {
+        title: "Remove from Whitelist",
+        confirmText: "Remove",
+        cancelText: "Cancel",
+      }
+    );
+
+    if (confirmed) {
+      const success = await removeEntry(domain);
+      if (success) {
+        await fetchWhitelistContent();
+      }
     }
   };
 
@@ -47,7 +230,7 @@ export default function WhitelistDriver({ drivers, loading }: WhitelistDriverPro
               onChange={(value) => handleDriverFormChange(value)}
               options={availableDrivers.map((driver: string) => ({
                 value: driver,
-                label: driver.charAt(0).toUpperCase() + driver.slice(1)
+                label: formatDriverName(driver)
               }))}
             />
           </div>
@@ -65,13 +248,10 @@ export default function WhitelistDriver({ drivers, loading }: WhitelistDriverPro
 
         {/* Driver Status */}
         <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-          <span className="material-icons text-lg text-gray-600">list</span>
+          <span className="material-icons text-lg text-gray-600">verified</span>
           <div>
             <div className="font-medium text-gray-900">
-              Current: {currentDriver?.implementation ? 
-                currentDriver.implementation.charAt(0).toUpperCase() + currentDriver.implementation.slice(1) 
-                : 'Unknown'
-              }
+              Current Driver: {formatDriverName(currentDriver?.implementation || '')}
             </div>
             <div className="text-sm text-gray-500">
               Status: <span className={`font-medium ${currentDriver?.status === 'active' ? 'text-green-600' : 'text-gray-600'}`}>
@@ -81,31 +261,177 @@ export default function WhitelistDriver({ drivers, loading }: WhitelistDriverPro
           </div>
         </div>
 
-        {/* Content Table Placeholder */}
-        <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-          <div className="flex items-center gap-2 text-gray-600 mb-2">
-            <span className="material-icons text-lg">list</span>
-            <span className="font-medium">Whitelist Content</span>
+        {/* Actions */}
+        <div className="flex justify-between items-center">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => fetchWhitelistContent()}
+            disabled={contentLoading}
+          >
+            <span className="material-icons text-sm mr-1">refresh</span>
+            {contentLoading ? "Loading..." : "Refresh"}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleClearWhitelist}
+            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+          >
+            <span className="material-icons text-sm mr-1">clear_all</span>
+            Clear Whitelist
+          </Button>
+        </div>
+
+        {/* Add New Entry */}
+        <div className="border border-gray-200 rounded-lg p-4">
+          <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
+            <span className="material-icons text-lg">add</span>
+            Add Domain to Whitelist
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <FloatingLabelInput
+              label="Domain"
+              value={newEntry.domain}
+              onChange={(e) => setNewEntry(prev => ({ ...prev, domain: e.target.value }))}
+              placeholder="example.com"
+            />
+            <FloatingLabelInput
+              label="Reason (optional)"
+              value={newEntry.reason}
+              onChange={(e) => setNewEntry(prev => ({ ...prev, reason: e.target.value }))}
+              placeholder="Trusted business site"
+            />
+            <Select
+              label="Category"
+              value={newEntry.category}
+              onChange={(value) => setNewEntry(prev => ({ ...prev, category: value }))}
+              options={[
+                { value: 'manual', label: 'Manual' },
+                { value: 'banking', label: 'Banking' },
+                { value: 'education', label: 'Education' },
+                { value: 'work', label: 'Work' },
+                { value: 'essential', label: 'Essential' },
+                { value: 'trusted', label: 'Trusted' },
+              ]}
+            />
+            <div className="flex items-end">
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleAddEntry}
+                disabled={!newEntry.domain}
+                className="w-full"
+              >
+                Add to Whitelist
+              </Button>
+            </div>
           </div>
-          <p className="text-sm text-gray-500">
-            Content will auto-refresh when server is running. Content table implementation coming soon.
-          </p>
+        </div>
+
+        {/* Filters */}
+        <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="font-medium text-gray-900 flex items-center gap-2">
+              <span className="material-icons text-lg">filter_list</span>
+              Filters
+            </h4>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setFilters({ domain: '', category: '', source: '', reason: '' });
+                fetchWhitelistContent({ domain: '', category: '', source: '', reason: '' });
+              }}
+            >
+              Clear Filters
+            </Button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <FloatingLabelInput
+              label="Filter by Domain"
+              value={filters.domain}
+              onChange={(e) => setFilters(prev => ({ ...prev, domain: e.target.value }))}
+              placeholder="Search domains..."
+            />
+            <Select
+              label="Category"
+              value={filters.category}
+              onChange={(value) => setFilters(prev => ({ ...prev, category: value }))}
+              options={[
+                { value: '', label: 'All Categories' },
+                { value: 'manual', label: 'Manual' },
+                { value: 'banking', label: 'Banking' },
+                { value: 'education', label: 'Education' },
+                { value: 'work', label: 'Work' },
+                { value: 'essential', label: 'Essential' },
+                { value: 'trusted', label: 'Trusted' },
+                { value: 'logs', label: 'From Logs' },
+              ]}
+            />
+            <Select
+              label="Source"
+              value={filters.source}
+              onChange={(value) => setFilters(prev => ({ ...prev, source: value }))}
+              options={[
+                { value: '', label: 'All Sources' },
+                { value: 'manual', label: 'Manual' },
+                { value: 'import', label: 'Import' },
+                { value: 'logs', label: 'From Logs' },
+                { value: 'api', label: 'API' },
+              ]}
+            />
+            <div className="flex items-end">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => fetchWhitelistContent()}
+                className="w-full"
+              >
+                Apply Filters
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {/* Whitelist Content Table */}
+        <div className="border border-gray-200 rounded-lg bg-white">
+          <div className="flex items-center justify-between p-4 border-b border-gray-200">
+            <div className="flex items-center gap-2 text-gray-700">
+              <span className="material-icons text-lg">verified</span>
+              <span className="font-medium">Allowed Domains</span>
+              <span className="text-sm text-gray-500">
+                ({Array.isArray(content?.content) ? content.content.length : 0} domains)
+              </span>
+            </div>
+          </div>
           
-          {/* TODO: Add whitelist-specific content table with domain allowing features */}
-          {/* Features to implement:
-              - Allowed domains list with search/filter
-              - Add/remove domains manually
-              - Import/export whitelist files
-              - Trusted domain categories (banking, education, work, etc.)
-              - Subdomain management (*.domain.com)
-              - Priority-based allowing (override blacklist)
-              - Whitelist statistics and usage analytics
-              - Domain verification and validation
-              - Bulk domain management
-              - Pattern-based allowing rules
-              - Integration with parental controls
-              - Time-based whitelisting (allow during work hours)
-          */}
+          <Table
+            columns={[...tableColumns, {
+              key: "actions",
+              label: "Actions",
+              render: (_value: any, entry: WhitelistEntry) => (
+                <button
+                  onClick={() => handleRemoveEntry(entry.domain)}
+                  className="inline-flex items-center gap-1 px-2 py-1 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
+                  title="Remove from whitelist"
+                >
+                  <span className="material-icons text-sm">delete</span>
+                  Remove
+                </button>
+              ),
+            }]}
+            data={Array.isArray(content?.content) ? content.content : []}
+            loading={contentLoading}
+            loadingMessage="Loading whitelist entries..."
+            emptyMessage={
+              typeof content?.content === "string"
+                ? content.content
+                : currentDriver?.implementation === "inmemory"
+                ? "No domains in whitelist. Add trusted domains manually or import from logs."
+                : "No whitelist entries available. Click Refresh to load entries from the current driver."
+            }
+          />
         </div>
       </div>
     </Card>
