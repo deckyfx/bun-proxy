@@ -130,7 +130,7 @@ export default function BlacklistDriver({ drivers, loading }: BlacklistDriverPro
     connectSSE, 
     disconnectSSE 
   } = useDnsBlacklistStore();
-  const { showConfirm } = useDialogStore();
+  const { showConfirm, showCustom, closeDialog } = useDialogStore();
 
   useEffect(() => {
     if (drivers?.current?.blacklist) {
@@ -216,6 +216,92 @@ export default function BlacklistDriver({ drivers, loading }: BlacklistDriverPro
     }
   };
 
+  const showAddDialog = () => {
+    const AddEntryDialog = () => {
+      const [formData, setFormData] = useState({ domain: '', reason: '', category: 'manual' });
+      const [submitting, setSubmitting] = useState(false);
+
+      const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!formData.domain) return;
+
+        setSubmitting(true);
+        try {
+          const success = await addEntry(
+            formData.domain, 
+            formData.reason || 'Manually added', 
+            formData.category || 'manual'
+          );
+          
+          if (success) {
+            await fetchBlacklistContent();
+            closeDialog(dialogId);
+          }
+        } finally {
+          setSubmitting(false);
+        }
+      };
+
+      return (
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <FloatingLabelInput
+            label="Domain"
+            value={formData.domain}
+            onChange={(e) => setFormData(prev => ({ ...prev, domain: e.target.value }))}
+            disabled={submitting}
+            required
+          />
+          <FloatingLabelInput
+            label="Reason (optional)"
+            value={formData.reason}
+            onChange={(e) => setFormData(prev => ({ ...prev, reason: e.target.value }))}
+            disabled={submitting}
+          />
+          <Select
+            label="Category"
+            value={formData.category}
+            onChange={(value) => setFormData(prev => ({ ...prev, category: value }))}
+            options={[
+              { value: 'manual', label: 'Manual' },
+              { value: 'ads', label: 'Ads' },
+              { value: 'malware', label: 'Malware' },
+              { value: 'phishing', label: 'Phishing' },
+              { value: 'social', label: 'Social Media' },
+              { value: 'gaming', label: 'Gaming' },
+              { value: 'adult', label: 'Adult Content' },
+            ]}
+          />
+          <div className="flex justify-end space-x-3 mt-6">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => closeDialog(dialogId)}
+              disabled={submitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              isLoading={submitting}
+              disabled={submitting || !formData.domain}
+            >
+              Add to Blacklist
+            </Button>
+          </div>
+        </form>
+      );
+    };
+
+    const dialogId = showCustom(
+      <AddEntryDialog />,
+      {
+        title: "Add Domain to Blacklist",
+        showCloseButton: true,
+      }
+    );
+  };
+
   const availableDrivers = drivers?.available[DRIVER_TYPES.BLACKLIST] || [];
   const currentDriver = drivers?.current[DRIVER_TYPES.BLACKLIST];
 
@@ -264,15 +350,26 @@ export default function BlacklistDriver({ drivers, loading }: BlacklistDriverPro
 
         {/* Actions */}
         <div className="flex justify-between items-center">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => fetchBlacklistContent()}
-            disabled={contentLoading}
-          >
-            <span className="material-icons text-sm mr-1">refresh</span>
-            {contentLoading ? "Loading..." : "Refresh"}
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => fetchBlacklistContent()}
+              disabled={contentLoading}
+              className="text-green-600 hover:text-green-700 hover:bg-green-50 border-green-300"
+            >
+              <span className="material-icons text-sm mr-1">refresh</span>
+              {contentLoading ? "Loading..." : "Refresh"}
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => showAddDialog()}
+              icon="add"
+            >
+              Add Domain
+            </Button>
+          </div>
           <Button
             variant="secondary"
             size="sm"
@@ -282,53 +379,6 @@ export default function BlacklistDriver({ drivers, loading }: BlacklistDriverPro
             <span className="material-icons text-sm mr-1">clear_all</span>
             Clear Blacklist
           </Button>
-        </div>
-
-        {/* Add New Entry */}
-        <div className="border border-gray-200 rounded-lg p-4">
-          <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
-            <span className="material-icons text-lg">add</span>
-            Add Domain to Blacklist
-          </h4>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <FloatingLabelInput
-              label="Domain"
-              value={newEntry.domain}
-              onChange={(e) => setNewEntry(prev => ({ ...prev, domain: e.target.value }))}
-              placeholder="example.com"
-            />
-            <FloatingLabelInput
-              label="Reason (optional)"
-              value={newEntry.reason}
-              onChange={(e) => setNewEntry(prev => ({ ...prev, reason: e.target.value }))}
-              placeholder="Malware site"
-            />
-            <Select
-              label="Category"
-              value={newEntry.category}
-              onChange={(value) => setNewEntry(prev => ({ ...prev, category: value }))}
-              options={[
-                { value: 'manual', label: 'Manual' },
-                { value: 'ads', label: 'Ads' },
-                { value: 'malware', label: 'Malware' },
-                { value: 'phishing', label: 'Phishing' },
-                { value: 'social', label: 'Social Media' },
-                { value: 'gaming', label: 'Gaming' },
-                { value: 'adult', label: 'Adult Content' },
-              ]}
-            />
-            <div className="flex items-end">
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={handleAddEntry}
-                disabled={!newEntry.domain}
-                className="w-full"
-              >
-                Add to Blacklist
-              </Button>
-            </div>
-          </div>
         </div>
 
         {/* Filters */}
@@ -354,7 +404,6 @@ export default function BlacklistDriver({ drivers, loading }: BlacklistDriverPro
               label="Filter by Domain"
               value={filters.domain}
               onChange={(e) => setFilters(prev => ({ ...prev, domain: e.target.value }))}
-              placeholder="Search domains..."
             />
             <Select
               label="Category"

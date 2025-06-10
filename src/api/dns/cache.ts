@@ -1,6 +1,7 @@
 import { dnsManager } from "@src/dns/manager";
 import { Auth, type AuthUser } from "@utils/auth";
 import { DRIVER_TYPES, DRIVER_METHODS, type DriverConfig, type DriverContentResponse } from "@src/types/driver";
+import { dnsEventService } from "@src/dns/DNSEventService";
 import { 
   createCacheDriverInstance, 
   getDrivers, 
@@ -188,6 +189,9 @@ async function clearCacheDriver(config: DriverConfig): Promise<Response> {
       await cacheDriver.clear();
       cleared = true;
       message = 'Cache cleared successfully';
+      
+      // Emit SSE event for cache update
+      dnsEventService.refreshDriverContent(DRIVER_TYPES.CACHE);
     } else {
       message = 'Cache driver does not support clearing';
     }
@@ -225,6 +229,9 @@ async function addCacheEntry(config: DriverConfig): Promise<Response> {
 
     await cacheDriver.set(config.key, config.value, config.ttl);
 
+    // Emit SSE event for cache update
+    dnsEventService.refreshDriverContent(DRIVER_TYPES.CACHE);
+
     return createSuccessResponse({
       message: `Cache entry added successfully`,
       key: config.key,
@@ -257,6 +264,11 @@ async function removeCacheEntry(config: DriverConfig): Promise<Response> {
     }
 
     const deleted = await cacheDriver.delete(config.key);
+
+    // Emit SSE event for cache update if something was deleted
+    if (deleted) {
+      dnsEventService.refreshDriverContent(DRIVER_TYPES.CACHE);
+    }
 
     return createSuccessResponse({
       message: deleted ? `Cache entry removed successfully` : `Cache entry not found`,
@@ -294,6 +306,9 @@ async function updateCacheEntry(config: DriverConfig): Promise<Response> {
     }
 
     await cacheDriver.set(config.key, config.value, config.ttl);
+
+    // Emit SSE event for cache update
+    dnsEventService.refreshDriverContent(DRIVER_TYPES.CACHE);
 
     return createSuccessResponse({
       message: `Cache entry updated successfully`,

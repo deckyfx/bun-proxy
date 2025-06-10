@@ -9,6 +9,7 @@ import log from './log';
 import cache from './cache';
 import blacklist from './blacklist';
 import whitelist from './whitelist';
+import metrics from './metrics';
 
 export default {
   ...status,
@@ -22,4 +23,5 @@ export default {
   ...cache,
   ...blacklist,
   ...whitelist,
+  ...metrics,
 };

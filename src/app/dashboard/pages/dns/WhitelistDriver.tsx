@@ -129,7 +129,7 @@ export default function WhitelistDriver({ drivers, loading }: WhitelistDriverPro
     connectSSE, 
     disconnectSSE 
   } = useDnsWhitelistStore();
-  const { showConfirm } = useDialogStore();
+  const { showConfirm, showCustom, closeDialog } = useDialogStore();
 
   useEffect(() => {
     if (drivers?.current?.whitelist) {
@@ -215,6 +215,91 @@ export default function WhitelistDriver({ drivers, loading }: WhitelistDriverPro
     }
   };
 
+  const showAddDialog = () => {
+    const AddEntryDialog = () => {
+      const [formData, setFormData] = useState({ domain: '', reason: '', category: 'manual' });
+      const [submitting, setSubmitting] = useState(false);
+
+      const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!formData.domain) return;
+
+        setSubmitting(true);
+        try {
+          const success = await addEntry(
+            formData.domain, 
+            formData.reason || 'Manually added', 
+            formData.category || 'manual'
+          );
+          
+          if (success) {
+            await fetchWhitelistContent();
+            closeDialog(dialogId);
+          }
+        } finally {
+          setSubmitting(false);
+        }
+      };
+
+      return (
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <FloatingLabelInput
+            label="Domain"
+            value={formData.domain}
+            onChange={(e) => setFormData(prev => ({ ...prev, domain: e.target.value }))}
+            disabled={submitting}
+            required
+          />
+          <FloatingLabelInput
+            label="Reason (optional)"
+            value={formData.reason}
+            onChange={(e) => setFormData(prev => ({ ...prev, reason: e.target.value }))}
+            disabled={submitting}
+          />
+          <Select
+            label="Category"
+            value={formData.category}
+            onChange={(value) => setFormData(prev => ({ ...prev, category: value }))}
+            options={[
+              { value: 'manual', label: 'Manual' },
+              { value: 'banking', label: 'Banking' },
+              { value: 'education', label: 'Education' },
+              { value: 'work', label: 'Work' },
+              { value: 'essential', label: 'Essential' },
+              { value: 'trusted', label: 'Trusted' },
+            ]}
+          />
+          <div className="flex justify-end space-x-3 mt-6">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => closeDialog(dialogId)}
+              disabled={submitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              isLoading={submitting}
+              disabled={submitting || !formData.domain}
+            >
+              Add to Whitelist
+            </Button>
+          </div>
+        </form>
+      );
+    };
+
+    const dialogId = showCustom(
+      <AddEntryDialog />,
+      {
+        title: "Add Domain to Whitelist",
+        showCloseButton: true,
+      }
+    );
+  };
+
   const availableDrivers = drivers?.available[DRIVER_TYPES.WHITELIST] || [];
   const currentDriver = drivers?.current[DRIVER_TYPES.WHITELIST];
 
@@ -263,15 +348,26 @@ export default function WhitelistDriver({ drivers, loading }: WhitelistDriverPro
 
         {/* Actions */}
         <div className="flex justify-between items-center">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => fetchWhitelistContent()}
-            disabled={contentLoading}
-          >
-            <span className="material-icons text-sm mr-1">refresh</span>
-            {contentLoading ? "Loading..." : "Refresh"}
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => fetchWhitelistContent()}
+              disabled={contentLoading}
+              className="text-green-600 hover:text-green-700 hover:bg-green-50 border-green-300"
+            >
+              <span className="material-icons text-sm mr-1">refresh</span>
+              {contentLoading ? "Loading..." : "Refresh"}
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => showAddDialog()}
+              icon="add"
+            >
+              Add Domain
+            </Button>
+          </div>
           <Button
             variant="secondary"
             size="sm"
@@ -281,52 +377,6 @@ export default function WhitelistDriver({ drivers, loading }: WhitelistDriverPro
             <span className="material-icons text-sm mr-1">clear_all</span>
             Clear Whitelist
           </Button>
-        </div>
-
-        {/* Add New Entry */}
-        <div className="border border-gray-200 rounded-lg p-4">
-          <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
-            <span className="material-icons text-lg">add</span>
-            Add Domain to Whitelist
-          </h4>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <FloatingLabelInput
-              label="Domain"
-              value={newEntry.domain}
-              onChange={(e) => setNewEntry(prev => ({ ...prev, domain: e.target.value }))}
-              placeholder="example.com"
-            />
-            <FloatingLabelInput
-              label="Reason (optional)"
-              value={newEntry.reason}
-              onChange={(e) => setNewEntry(prev => ({ ...prev, reason: e.target.value }))}
-              placeholder="Trusted business site"
-            />
-            <Select
-              label="Category"
-              value={newEntry.category}
-              onChange={(value) => setNewEntry(prev => ({ ...prev, category: value }))}
-              options={[
-                { value: 'manual', label: 'Manual' },
-                { value: 'banking', label: 'Banking' },
-                { value: 'education', label: 'Education' },
-                { value: 'work', label: 'Work' },
-                { value: 'essential', label: 'Essential' },
-                { value: 'trusted', label: 'Trusted' },
-              ]}
-            />
-            <div className="flex items-end">
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={handleAddEntry}
-                disabled={!newEntry.domain}
-                className="w-full"
-              >
-                Add to Whitelist
-              </Button>
-            </div>
-          </div>
         </div>
 
         {/* Filters */}
@@ -352,7 +402,6 @@ export default function WhitelistDriver({ drivers, loading }: WhitelistDriverPro
               label="Filter by Domain"
               value={filters.domain}
               onChange={(e) => setFilters(prev => ({ ...prev, domain: e.target.value }))}
-              placeholder="Search domains..."
             />
             <Select
               label="Category"

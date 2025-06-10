@@ -1,7 +1,7 @@
 import { Auth, type AuthUser } from "@utils/auth";
 
 export async function Me(
-  req: Bun.BunRequest<"/api/:scope/:command">,
+  _: Bun.BunRequest<"/api/:scope/:command">,
   user: AuthUser
 ): Promise<Response> {
   return Response.json(user);

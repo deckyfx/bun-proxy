@@ -11,17 +11,14 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { id: "overview", label: "Overview", icon: "dashboard", path: "/overview" },
-  { id: "debug", label: "Debug", icon: "bug_report", path: "/debug" },
   { id: "analytics", label: "Analytics", icon: "analytics", path: "/analytics" },
-  { id: "users", label: "Users", icon: "people", path: "/users" },
   { id: "dns", label: "DNS", icon: "dns", path: "/dns" },
-  { id: "settings", label: "Settings", icon: "settings", path: "/settings" },
+  { id: "users", label: "Users", icon: "people", path: "/users" },
 ];
 
 export function LeftDrawerNav() {
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [activeItem, setActiveItem] = useState("overview");
+  const [activeItem, setActiveItem] = useState("analytics");
   const { logout } = useAuthStore();
 
   // Safely try to use router hooks
@@ -37,8 +34,12 @@ export function LeftDrawerNav() {
   const getActiveItem = () => {
     if (location) {
       const currentPath = location.pathname;
+      // Handle root path as analytics
+      if (currentPath === '/' || currentPath === '') {
+        return 'analytics';
+      }
       const activeNav = navItems.find(item => item.path === currentPath);
-      return activeNav?.id || "overview";
+      return activeNav?.id || "analytics";
     }
     return activeItem;
   };

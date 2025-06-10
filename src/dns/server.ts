@@ -263,7 +263,118 @@ export class DNSProxyServer {
     
     const clientInfo = { address: rinfo?.address, port: rinfo?.port };
     
-    // Check cache first
+    // Check blacklist/whitelist first (before cache)
+    let blocked = false;
+    let whitelisted = false;
+    let whitelistEmpty = true;
+    
+    if (this.drivers.blacklist) {
+      try {
+        blocked = await this.drivers.blacklist.contains(queryInfo.domain);
+      } catch (error) {
+        console.warn('Blacklist check failed:', error);
+      }
+    }
+    
+    if (this.drivers.whitelist) {
+      try {
+        // Check if whitelist has entries
+        const whitelistStats = await this.drivers.whitelist.stats();
+        whitelistEmpty = whitelistStats.totalEntries === 0;
+        
+        if (!whitelistEmpty) {
+          whitelisted = await this.drivers.whitelist.contains(queryInfo.domain);
+        }
+      } catch (error) {
+        console.warn('Whitelist check failed:', error);
+      }
+    }
+    
+    // Determine if request should be blocked:
+    // 1. If blacklisted and not whitelisted -> block
+    // 2. If whitelist is not empty and domain not in whitelist -> block
+    const shouldBlock = (blocked && !whitelisted) || (!whitelistEmpty && !whitelisted);
+    
+    if (shouldBlock) {
+      const queryBuffer = this.packetToBuffer(request);
+      
+      // Safely extract questions data - ensure type and class are strings not numbers
+      const questions = request.questions?.map((q: any) => ({
+        name: q.name || queryInfo.domain,
+        type: typeof q.type === 'string' ? q.type : this.getTypeString(q.type) || 'A',
+        class: typeof q.class === 'string' ? q.class : 'IN'
+      })) || [{
+        name: queryInfo.domain,
+        type: queryInfo.type,
+        class: 'IN'
+      }];
+      
+      const blockedResponseBuffer = require('dns-packet').encode({
+        id: (request as any).header?.id || 0,
+        type: 'response',
+        flags: 384, // QR=1, RD=1
+        questions,
+        answers: [],
+        rcode: 3 // NXDOMAIN
+      });
+      const responseTime = Date.now() - startTime;
+      
+      const requestLogEntry: LogEntry = {
+        type: 'request',
+        requestId,
+        timestamp: new Date(),
+        level: 'info',
+        query: {
+          domain: queryInfo.domain,
+          type: queryInfo.type,
+          querySize: queryBuffer.length,
+          clientIP: clientInfo?.address,
+          clientPort: clientInfo?.port
+        },
+        source: 'client',
+        cached: false,
+        blocked: shouldBlock,
+        whitelisted,
+        attempt: 1
+      };
+      
+      const responseLogEntry: LogEntry = {
+        type: 'response',
+        requestId,
+        timestamp: new Date(),
+        level: 'info',
+        query: {
+          domain: queryInfo.domain,
+          type: queryInfo.type,
+          querySize: queryBuffer.length,
+          clientIP: clientInfo?.address,
+          clientPort: clientInfo?.port
+        },
+        provider: blocked ? 'blacklist' : 'whitelist',
+        attempt: 1,
+        responseTime,
+        response: {
+          responseSize: blockedResponseBuffer.length
+        },
+        success: true,
+        cached: false,
+        blocked: shouldBlock,
+        whitelisted,
+        source: 'client'
+      };
+      
+      // Log both request and response
+      logEventEmitter.emit(requestLogEntry);
+      logEventEmitter.emit(responseLogEntry);
+      if (this.drivers.logs) {
+        await this.drivers.logs.log(requestLogEntry);
+        await this.drivers.logs.log(responseLogEntry);
+      }
+      
+      return blockedResponseBuffer;
+    }
+    
+    // Check cache after blacklist/whitelist checks
     const cacheKey = `${queryInfo.domain}:${queryInfo.type}`;
     let cached = false;
     
@@ -323,26 +434,6 @@ export class DNSProxyServer {
       }
     }
     
-    // Check blacklist
-    let blocked = false;
-    if (this.drivers.blacklist) {
-      try {
-        blocked = await this.drivers.blacklist.contains(queryInfo.domain);
-      } catch (error) {
-        console.warn('Blacklist check failed:', error);
-      }
-    }
-    
-    // Check whitelist
-    let whitelisted = false;
-    if (this.drivers.whitelist) {
-      try {
-        whitelisted = await this.drivers.whitelist.contains(queryInfo.domain);
-      } catch (error) {
-        console.warn('Whitelist check failed:', error);
-      }
-    }
-    
     // Log the incoming request (dual-pipe: SSE + persistent driver)
     const requestLogEntry: LogEntry = {
       type: 'request',
@@ -370,52 +461,7 @@ export class DNSProxyServer {
     }
 
     // Cache response was already returned above if found
-
-    // If blocked, return NXDOMAIN
-    if (blocked && !whitelisted) {
-      const queryBuffer = this.packetToBuffer(request);
-      const blockedResponseBuffer = require('dns-packet').encode({
-        id: (request as any).header?.id || 0,
-        type: 'response',
-        flags: 384, // QR=1, RD=1
-        questions: (request as any).questions || [],
-        answers: [],
-        rcode: 3 // NXDOMAIN
-      });
-      const responseTime = Date.now() - startTime;
-      
-      const responseLogEntry: LogEntry = {
-        type: 'response',
-        requestId,
-        timestamp: new Date(),
-        level: 'info',
-        query: {
-          domain: queryInfo.domain,
-          type: queryInfo.type,
-          querySize: queryBuffer.length,
-          clientIP: clientInfo?.address,
-          clientPort: clientInfo?.port
-        },
-        provider: 'blacklist',
-        attempt: 1,
-        responseTime,
-        response: {
-          responseSize: blockedResponseBuffer.length
-        },
-        success: true,
-        cached: false,
-        blocked: true,
-        whitelisted,
-        source: 'client'
-      };
-      
-      logEventEmitter.emit(responseLogEntry);
-      if (this.drivers.logs) {
-        await this.drivers.logs.log(responseLogEntry);
-      }
-      
-      return blockedResponseBuffer;
-    }
+    // Blocked responses were already handled above if blocked
 
     // Try providers in order based on usage optimization
     for (const provider of this.getOptimizedProviderOrder()) {

@@ -5,21 +5,29 @@ import { Button, FloatingLabelInput } from "@app_components/index";
 
 export default function SignUp() {
   const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [emailError, setEmailError] = useState("");
+  const [usernameError, setUsernameError] = useState("");
   const [confirmPasswordError, setConfirmPasswordError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
   const { signup } = useAuthStore();
-  const { validateEmail, validatePasswordMatch } = useValidationStore();
+  const { validateEmail, validateUsername, validatePasswordMatch } = useValidationStore();
 
   const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newEmail = e.target.value;
     setEmail(newEmail);
     setEmailError(validateEmail(newEmail));
+  };
+
+  const handleUsernameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newUsername = e.target.value;
+    setUsername(newUsername);
+    setUsernameError(validateUsername(newUsername));
   };
 
   const handleConfirmPasswordChange = (
@@ -55,7 +63,7 @@ export default function SignUp() {
     setIsLoading(true);
 
     try {
-      await signup({ email, password, name, confirmPassword });
+      await signup({ email, username, password, name, confirmPassword });
 
       // Show success alert
       alert("Account created successfully! Redirecting to sign in...");
@@ -65,6 +73,7 @@ export default function SignUp() {
 
       // Reset form
       setEmail("");
+      setUsername("");
       setPassword("");
       setName("");
       setConfirmPassword("");
@@ -100,6 +109,15 @@ export default function SignUp() {
           disabled={isLoading}
           required
           error={emailError}
+        />
+        <FloatingLabelInput
+          type="text"
+          label="Username"
+          value={username}
+          onChange={handleUsernameChange}
+          disabled={isLoading}
+          required
+          error={usernameError}
         />
         <FloatingLabelInput
           type="password"

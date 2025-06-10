@@ -150,6 +150,9 @@ export const useDnsCacheStore = create<DnsCacheStore>((set, get) => ({
         successMessage: `Added "${key}" to cache`
       });
       
+      // Immediately refresh content to ensure UI updates
+      await get().getContent();
+      
       return true;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to add cache entry';

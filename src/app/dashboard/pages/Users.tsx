@@ -1,86 +1,230 @@
-import { Button } from "@app_components/index";
+import { useEffect, useState } from "react";
+import { Button } from "@app/components/Button";
+import { Card } from "@app/components/Card";
+import Table, { type TableColumn } from "@app/components/Table";
 import { PageContainer } from "../components/PageContainer";
+import { useUserDialog } from "./users/UserDialog";
+import { useDialogStore } from "@app/stores/dialogStore";
+import { useUserStore, type User, type CreateUserData, type UpdateUserData } from "@app/stores/userStore";
+import { useAuthStore } from "@app/stores/authStore";
 
 export default function Users() {
-  const mockUsers = [
-    { id: 1, name: "John Doe", email: "john@example.com", status: "Active" },
-    { id: 2, name: "Jane Smith", email: "jane@example.com", status: "Active" },
-    { id: 3, name: "Bob Johnson", email: "bob@example.com", status: "Inactive" },
-    { id: 4, name: "Alice Brown", email: "alice@example.com", status: "Active" },
+  const { users, loading, error, fetchUsers, createUser, updateUser, deleteUser, clearError } = useUserStore();
+  const { user: currentUser } = useAuthStore();
+  const { showUserDialog } = useUserDialog();
+  const { showConfirm } = useDialogStore();
+  
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    fetchUsers();
+  }, [fetchUsers]);
+
+  useEffect(() => {
+    if (error) {
+      const timer = setTimeout(() => {
+        clearError();
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [error, clearError]);
+
+  const handleCreateUser = () => {
+    showUserDialog(async (userData) => {
+      setSubmitting(true);
+      try {
+        await createUser(userData as CreateUserData);
+      } finally {
+        setSubmitting(false);
+      }
+    });
+  };
+
+  const handleEditUser = (user: User) => {
+    showUserDialog(async (userData) => {
+      setSubmitting(true);
+      try {
+        await updateUser(userData as UpdateUserData);
+      } finally {
+        setSubmitting(false);
+      }
+    }, user);
+  };
+
+  const handleDeleteUser = async (user: User) => {
+    if (user.id === 1) {
+      await showConfirm(
+        "The superadmin account (ID: 1) cannot be deleted for security reasons.", 
+        {
+          title: "Cannot Delete Superadmin",
+          confirmText: "OK",
+          cancelText: undefined
+        }
+      );
+      return;
+    }
+
+    const confirmed = await showConfirm(
+      `Are you sure you want to delete user "${user.name}"? This action cannot be undone.`,
+      {
+        title: "Delete User",
+        confirmText: "Delete",
+        cancelText: "Cancel"
+      }
+    );
+
+    if (confirmed) {
+      setSubmitting(true);
+      try {
+        await deleteUser(user.id);
+      } finally {
+        setSubmitting(false);
+      }
+    }
+  };
+
+  const formatLastLogin = (lastLogin: Date | null): string => {
+    if (!lastLogin) return 'Never';
+    return lastLogin.toLocaleDateString() + ' ' + lastLogin.toLocaleTimeString();
+  };
+
+  const columns: TableColumn<User>[] = [
+    {
+      key: 'id',
+      label: 'ID',
+      width: '60px',
+      className: 'font-medium',
+    },
+    {
+      key: 'name',
+      label: 'Name',
+      className: 'font-medium text-gray-900',
+      render: (value, user) => (
+        <div className="flex items-center">
+          <span>{value}</span>
+          {user.id === 1 && (
+            <span className="ml-2 px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
+              Superadmin
+            </span>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: 'email',
+      label: 'Email',
+      className: 'text-gray-600',
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      render: (value) => (
+        <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
+          value === "Active" 
+            ? "bg-green-100 text-green-800" 
+            : "bg-gray-100 text-gray-800"
+        }`}>
+          {value}
+        </span>
+      ),
+    },
+    {
+      key: 'last_login',
+      label: 'Last Login',
+      className: 'text-gray-600 text-sm',
+      render: (value) => formatLastLogin(value),
+    },
+    {
+      key: 'actions',
+      label: 'Actions',
+      render: (_, user) => (
+        <div className="flex space-x-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => handleEditUser(user)}
+            disabled={loading || submitting}
+          >
+            Edit
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => handleDeleteUser(user)}
+            disabled={loading || submitting || user.id === currentUser?.id}
+            className={user.id === 1 || user.id === currentUser?.id 
+              ? "text-gray-400 cursor-not-allowed" 
+              : "text-red-600 hover:text-red-700"
+            }
+          >
+            Delete
+          </Button>
+        </div>
+      ),
+    },
   ];
 
   return (
     <PageContainer 
-      title="Users" 
+      title="User Management" 
       maxWidth="6xl"
       actions={
-        <Button variant="primary" icon="add" size="md">
+        <Button 
+          variant="primary" 
+          icon="add" 
+          size="md"
+          onClick={handleCreateUser}
+          disabled={loading || submitting}
+        >
           Add User
         </Button>
       }
     >
-      
-      <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold">User Management</h2>
+      {error && (
+        <Card className="mb-6">
+          <div className="p-4 bg-red-50 border border-red-200 rounded-md">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <h3 className="text-sm font-medium text-red-800">Error</h3>
+                <div className="mt-2 text-sm text-red-700">
+                  {error}
+                </div>
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      <Card>
+        <div className="p-6">
+          <div className="flex justify-between items-center mb-6">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Users</h2>
+              <p className="text-sm text-gray-600 mt-1">
+                Manage user accounts and permissions
+              </p>
+            </div>
+            <div className="text-sm text-gray-500">
+              Total users: {users.length}
+            </div>
+          </div>
+
+          <Table
+            columns={columns}
+            data={users}
+            loading={loading}
+            loadingMessage="Loading users..."
+            emptyMessage="No users found"
+            className="border rounded-lg"
+          />
         </div>
-        
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  ID
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Name
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Email
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Status
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {mockUsers.map((user) => (
-                <tr key={user.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {user.id}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {user.name}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {user.email}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
-                      user.status === "Active" 
-                        ? "bg-green-100 text-green-800" 
-                        : "bg-red-100 text-red-800"
-                    }`}>
-                      {user.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <Button variant="secondary" size="sm" className="mr-2">
-                      Edit
-                    </Button>
-                    <Button variant="secondary" size="sm" className="text-red-600 hover:text-red-700">
-                      Delete
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      </Card>
+
     </PageContainer>
   );
 }

@@ -27,7 +27,7 @@ export class ConsoleDriver extends BaseDriver {
     
     if (entry.type === 'server_event') {
       // Server event log format
-      logMessage = `[${timestamp}] ${level} ➤ SRV ${entry.eventType.toUpperCase()}: ${entry.message} [${requestId}]`;
+      logMessage = `[${timestamp}] ${level} ➤ SRV ${entry.eventType?.toUpperCase() || 'UNKNOWN'}: ${entry.message} [${requestId}]`;
       
       if (entry.port) {
         logMessage += ` (port: ${entry.port})`;

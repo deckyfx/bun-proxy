@@ -153,6 +153,9 @@ export const useDnsWhitelistStore = create<DnsWhitelistStore>((set, get) => ({
         successMessage: `Added "${domain}" to whitelist`
       });
       
+      // Immediately refresh content to ensure UI updates
+      await get().getContent();
+      
       return true;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to add whitelist entry';

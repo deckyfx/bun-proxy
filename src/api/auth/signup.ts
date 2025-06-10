@@ -7,11 +7,11 @@ export async function Signup(
 ): Promise<Response> {
   const body = (await req.json()) as Pick<
     UserType,
-    "email" | "password" | "name"
+    "email" | "username" | "password" | "name"
   >;
-  const { email, password, name } = body;
+  const { email, username, password, name } = body;
 
-  const [user, error] = await User.signup(email, password, name);
+  const [user, error] = await User.signup(email, username, password, name);
   if (error) {
     return new Response(error.message, { status: 500 });
   }

@@ -6,10 +6,10 @@ import { User } from "@models/User";
 export async function Signin(
   req: Bun.BunRequest<"/api/:scope/:command">
 ): Promise<Response> {
-  const body = (await req.json()) as Pick<UserType, "email" | "password">;
-  const { email, password } = body;
+  const body = (await req.json()) as { emailOrUsername: string; password: string };
+  const { emailOrUsername, password } = body;
 
-  const [user, error] = await User.signin(email, password);
+  const [user, error] = await User.signin(emailOrUsername, password);
   if (error) {
     return new Response(error.message, { status: 401 });
   }

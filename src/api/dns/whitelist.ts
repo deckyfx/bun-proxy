@@ -1,6 +1,7 @@
 import { dnsManager } from "@src/dns/manager";
 import { Auth, type AuthUser } from "@utils/auth";
 import { DRIVER_TYPES, DRIVER_METHODS, type DriverConfig, type DriverContentResponse } from "@src/types/driver";
+import { dnsEventService } from "@src/dns/DNSEventService";
 import { 
   createWhitelistDriverInstance, 
   getDrivers, 
@@ -191,6 +192,9 @@ async function clearWhitelistDriver(config: DriverConfig): Promise<Response> {
       await whitelistDriver.clear();
       cleared = true;
       message = 'Whitelist cleared successfully';
+      
+      // Emit SSE event for whitelist update
+      dnsEventService.refreshDriverContent(DRIVER_TYPES.WHITELIST);
     } else {
       message = 'Whitelist driver does not support clearing';
     }
@@ -228,6 +232,9 @@ async function addWhitelistEntry(config: DriverConfig): Promise<Response> {
 
     await whitelistDriver.add(config.key, config.reason, config.category);
 
+    // Emit SSE event for whitelist update
+    dnsEventService.refreshDriverContent(DRIVER_TYPES.WHITELIST);
+
     return createSuccessResponse({
       message: `Domain added to whitelist successfully`,
       domain: config.key,
@@ -260,6 +267,11 @@ async function removeWhitelistEntry(config: DriverConfig): Promise<Response> {
     }
 
     const removed = await whitelistDriver.remove(config.key);
+
+    // Emit SSE event for whitelist update (only if removal was successful)
+    if (removed) {
+      dnsEventService.refreshDriverContent(DRIVER_TYPES.WHITELIST);
+    }
 
     return createSuccessResponse({
       message: removed ? `Domain removed from whitelist successfully` : `Domain not found in whitelist`,
@@ -299,6 +311,9 @@ async function updateWhitelistEntry(config: DriverConfig): Promise<Response> {
     // Remove and re-add with new values
     await whitelistDriver.remove(config.key);
     await whitelistDriver.add(config.key, config.reason, config.category);
+
+    // Emit SSE event for whitelist update
+    dnsEventService.refreshDriverContent(DRIVER_TYPES.WHITELIST);
 
     return createSuccessResponse({
       message: `Whitelist entry updated successfully`,
@@ -340,6 +355,9 @@ async function importWhitelistEntries(config: DriverConfig): Promise<Response> {
     }));
 
     const imported = await whitelistDriver.import(entriesWithDefaults);
+
+    // Emit SSE event for whitelist update
+    dnsEventService.refreshDriverContent(DRIVER_TYPES.WHITELIST);
 
     return createSuccessResponse({
       message: `Successfully imported ${imported} whitelist entries`,

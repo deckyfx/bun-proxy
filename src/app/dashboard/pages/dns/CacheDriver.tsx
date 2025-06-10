@@ -120,7 +120,7 @@ export default function CacheDriver({ drivers, loading }: CacheDriverProps) {
     connectSSE, 
     disconnectSSE 
   } = useDnsCacheStore();
-  const { showConfirm } = useDialogStore();
+  const { showConfirm, showCustom, closeDialog } = useDialogStore();
 
   useEffect(() => {
     if (drivers?.current?.cache) {
@@ -209,6 +209,90 @@ export default function CacheDriver({ drivers, loading }: CacheDriverProps) {
     }
   };
 
+  const showAddDialog = () => {
+    const AddEntryDialog = () => {
+      const [formData, setFormData] = useState({ key: '', value: '', ttl: '3600' });
+      const [submitting, setSubmitting] = useState(false);
+
+      const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!formData.key || !formData.value) return;
+
+        setSubmitting(true);
+        try {
+          let parsedValue: any;
+          try {
+            parsedValue = JSON.parse(formData.value);
+          } catch {
+            parsedValue = formData.value;
+          }
+
+          const ttl = formData.ttl ? parseInt(formData.ttl) : undefined;
+          const success = await addEntry(formData.key, parsedValue, ttl);
+          
+          if (success) {
+            await fetchCacheContent();
+            closeDialog(dialogId);
+          }
+        } finally {
+          setSubmitting(false);
+        }
+      };
+
+      return (
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <FloatingLabelInput
+            label="Domain/Key"
+            value={formData.key}
+            onChange={(e) => setFormData(prev => ({ ...prev, key: e.target.value }))}
+            disabled={submitting}
+            required
+          />
+          <FloatingLabelInput
+            label="Value (JSON or String)"
+            value={formData.value}
+            onChange={(e) => setFormData(prev => ({ ...prev, value: e.target.value }))}
+            disabled={submitting}
+            required
+          />
+          <FloatingLabelInput
+            label="TTL (seconds)"
+            type="number"
+            value={formData.ttl}
+            onChange={(e) => setFormData(prev => ({ ...prev, ttl: e.target.value }))}
+            disabled={submitting}
+          />
+          <div className="flex justify-end space-x-3 mt-6">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => closeDialog(dialogId)}
+              disabled={submitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              isLoading={submitting}
+              disabled={submitting || !formData.key || !formData.value}
+            >
+              Add Entry
+            </Button>
+          </div>
+        </form>
+      );
+    };
+
+    const dialogId = showCustom(
+      <AddEntryDialog />,
+      {
+        title: "Add Cache Entry",
+        showCloseButton: true,
+      }
+    );
+  };
+
   const availableDrivers = drivers?.available[DRIVER_TYPES.CACHE] || [];
   const currentDriver = drivers?.current[DRIVER_TYPES.CACHE];
 
@@ -257,15 +341,26 @@ export default function CacheDriver({ drivers, loading }: CacheDriverProps) {
 
         {/* Actions */}
         <div className="flex justify-between items-center">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => fetchCacheContent()}
-            disabled={contentLoading}
-          >
-            <span className="material-icons text-sm mr-1">refresh</span>
-            {contentLoading ? "Loading..." : "Refresh"}
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => fetchCacheContent()}
+              disabled={contentLoading}
+              className="text-green-600 hover:text-green-700 hover:bg-green-50 border-green-300"
+            >
+              <span className="material-icons text-sm mr-1">refresh</span>
+              {contentLoading ? "Loading..." : "Refresh"}
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => showAddDialog()}
+              icon="add"
+            >
+              Add Entry
+            </Button>
+          </div>
           <Button
             variant="secondary"
             size="sm"
@@ -275,46 +370,6 @@ export default function CacheDriver({ drivers, loading }: CacheDriverProps) {
             <span className="material-icons text-sm mr-1">clear_all</span>
             Clear Cache
           </Button>
-        </div>
-
-        {/* Add New Entry */}
-        <div className="border border-gray-200 rounded-lg p-4">
-          <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
-            <span className="material-icons text-lg">add</span>
-            Add Cache Entry
-          </h4>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <FloatingLabelInput
-              label="Domain/Key"
-              value={newEntry.key}
-              onChange={(e) => setNewEntry(prev => ({ ...prev, key: e.target.value }))}
-              placeholder="example.com"
-            />
-            <FloatingLabelInput
-              label="Value (JSON or String)"
-              value={newEntry.value}
-              onChange={(e) => setNewEntry(prev => ({ ...prev, value: e.target.value }))}
-              placeholder='{"addresses": ["1.1.1.1"]}'
-            />
-            <FloatingLabelInput
-              label="TTL (seconds)"
-              type="number"
-              value={newEntry.ttl}
-              onChange={(e) => setNewEntry(prev => ({ ...prev, ttl: e.target.value }))}
-              placeholder="3600"
-            />
-            <div className="flex items-end">
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={handleAddEntry}
-                disabled={!newEntry.key || !newEntry.value}
-                className="w-full"
-              >
-                Add Entry
-              </Button>
-            </div>
-          </div>
         </div>
 
         {/* Filters */}
@@ -340,7 +395,6 @@ export default function CacheDriver({ drivers, loading }: CacheDriverProps) {
               label="Filter by Key"
               value={filters.key}
               onChange={(e) => setFilters(prev => ({ ...prev, key: e.target.value }))}
-              placeholder="Search keys..."
             />
             <div className="flex items-end">
               <Button

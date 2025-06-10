@@ -1,6 +1,7 @@
 import { dnsManager } from "@src/dns/manager";
 import { Auth, type AuthUser } from "@utils/auth";
 import { DRIVER_TYPES, DRIVER_METHODS, type DriverConfig, type DriverContentResponse } from "@src/types/driver";
+import { dnsEventService } from "@src/dns/DNSEventService";
 import { 
   createBlacklistDriverInstance, 
   getDrivers, 
@@ -191,6 +192,9 @@ async function clearBlacklistDriver(config: DriverConfig): Promise<Response> {
       await blacklistDriver.clear();
       cleared = true;
       message = 'Blacklist cleared successfully';
+      
+      // Emit SSE event for blacklist update
+      dnsEventService.refreshDriverContent(DRIVER_TYPES.BLACKLIST);
     } else {
       message = 'Blacklist driver does not support clearing';
     }
@@ -228,6 +232,9 @@ async function addBlacklistEntry(config: DriverConfig): Promise<Response> {
 
     await blacklistDriver.add(config.key, config.reason, config.category);
 
+    // Emit SSE event for blacklist update
+    dnsEventService.refreshDriverContent(DRIVER_TYPES.BLACKLIST);
+
     return createSuccessResponse({
       message: `Domain added to blacklist successfully`,
       domain: config.key,
@@ -260,6 +267,11 @@ async function removeBlacklistEntry(config: DriverConfig): Promise<Response> {
     }
 
     const removed = await blacklistDriver.remove(config.key);
+
+    // Emit SSE event for blacklist update (only if removal was successful)
+    if (removed) {
+      dnsEventService.refreshDriverContent(DRIVER_TYPES.BLACKLIST);
+    }
 
     return createSuccessResponse({
       message: removed ? `Domain removed from blacklist successfully` : `Domain not found in blacklist`,
@@ -299,6 +311,9 @@ async function updateBlacklistEntry(config: DriverConfig): Promise<Response> {
     // Remove and re-add with new values
     await blacklistDriver.remove(config.key);
     await blacklistDriver.add(config.key, config.reason, config.category);
+
+    // Emit SSE event for blacklist update
+    dnsEventService.refreshDriverContent(DRIVER_TYPES.BLACKLIST);
 
     return createSuccessResponse({
       message: `Blacklist entry updated successfully`,
@@ -341,6 +356,9 @@ async function importBlacklistEntries(config: DriverConfig): Promise<Response> {
 
     const imported = await blacklistDriver.import(entriesWithDefaults);
 
+    // Emit SSE event for blacklist update
+    dnsEventService.refreshDriverContent(DRIVER_TYPES.BLACKLIST);
+
     return createSuccessResponse({
       message: `Successfully imported ${imported} blacklist entries`,
       imported,
@@ -355,7 +373,7 @@ async function importBlacklistEntries(config: DriverConfig): Promise<Response> {
   }
 }
 
-async function exportBlacklistEntries(config: DriverConfig): Promise<Response> {
+async function exportBlacklistEntries(_config: DriverConfig): Promise<Response> {
   const serverError = checkServerAvailability();
   if (serverError) return serverError;
 

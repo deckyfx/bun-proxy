@@ -4,19 +4,24 @@ import { useValidationStore } from "@app_stores/validationStore";
 import { Button, FloatingLabelInput } from "@app_components/index";
 
 export default function SignIn() {
-  const [email, setEmail] = useState("");
+  const [emailOrUsername, setEmailOrUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const [emailError, setEmailError] = useState("");
+  const [emailOrUsernameError, setEmailOrUsernameError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
   const { signin } = useAuthStore();
   const { validateEmail } = useValidationStore();
 
-  const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newEmail = e.target.value;
-    setEmail(newEmail);
-    setEmailError(validateEmail(newEmail));
+  const handleEmailOrUsernameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newValue = e.target.value;
+    setEmailOrUsername(newValue);
+    // Only validate as email if it contains @ symbol
+    if (newValue.includes('@')) {
+      setEmailOrUsernameError(validateEmail(newValue));
+    } else {
+      setEmailOrUsernameError('');
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -25,7 +30,7 @@ export default function SignIn() {
     setIsLoading(true);
 
     try {
-      await signin({ email, password });
+      await signin({ emailOrUsername, password });
     } catch (error: any) {
       setError(error.message);
     } finally {
@@ -43,13 +48,13 @@ export default function SignIn() {
           </div>
         )}
         <FloatingLabelInput
-          type="email"
-          label="Email"
-          value={email}
-          onChange={handleEmailChange}
+          type="text"
+          label="Email or Username"
+          value={emailOrUsername}
+          onChange={handleEmailOrUsernameChange}
           disabled={isLoading}
           required
-          error={emailError}
+          error={emailOrUsernameError}
         />
         <FloatingLabelInput
           type="password"
