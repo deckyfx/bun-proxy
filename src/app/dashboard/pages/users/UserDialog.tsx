@@ -4,6 +4,7 @@ import { Button } from '@app/components/Button';
 import { useValidationStore } from '@app/stores/validationStore';
 import { useDialogStore } from '@app/stores/dialogStore';
 import type { User, CreateUserData, UpdateUserData } from '@app/stores/userStore';
+import { tryAsync } from '@src/utils/try';
 
 export function useUserDialog() {
   const { showCustom, closeDialog } = useDialogStore();
@@ -67,33 +68,35 @@ export function useUserDialog() {
         }
 
         setSubmitting(true);
-        try {
-          if (isEditMode && user) {
-            // Edit mode - only include changed/non-empty fields
-            const updateData: UpdateUserData = {
-              id: user.id,
-              email: formData.email !== user.email ? formData.email : undefined,
-              username: formData.username !== user.username ? formData.username : undefined,
-              name: formData.name !== user.name ? formData.name : undefined,
-              password: formData.password.trim() ? formData.password : undefined,
-            };
-            await onSubmit(updateData);
-          } else {
-            // Create mode
-            const createData: CreateUserData = {
-              email: formData.email,
-              username: formData.username,
-              password: formData.password,
-              name: formData.name,
-            };
-            await onSubmit(createData);
-          }
-          closeDialog(dialogId);
-        } catch (error) {
-          // Error handling is done in the store
-        } finally {
-          setSubmitting(false);
+        
+        let submitData: CreateUserData | UpdateUserData;
+        if (isEditMode && user) {
+          // Edit mode - only include changed/non-empty fields
+          submitData = {
+            id: user.id,
+            email: formData.email !== user.email ? formData.email : undefined,
+            username: formData.username !== user.username ? formData.username : undefined,
+            name: formData.name !== user.name ? formData.name : undefined,
+            password: formData.password.trim() ? formData.password : undefined,
+          };
+        } else {
+          // Create mode
+          submitData = {
+            email: formData.email,
+            username: formData.username,
+            password: formData.password,
+            name: formData.name,
+          };
         }
+        
+        const [, error] = await tryAsync(() => onSubmit(submitData));
+        
+        if (!error) {
+          closeDialog(dialogId);
+        }
+        // Error handling is done in the store
+        
+        setSubmitting(false);
       };
 
       return (

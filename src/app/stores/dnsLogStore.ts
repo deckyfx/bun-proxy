@@ -1,12 +1,13 @@
 import { create } from 'zustand';
-import { DRIVER_METHODS, type DriverConfig, type DriverContentResponse } from '@src/types/driver';
+import { DRIVER_METHODS, type DriverConfig, type DriverContentResponse, type DriverStatus } from '@src/types/driver';
 import { useSnackbarStore } from './snackbarStore';
-import { sseClient } from '@src/utils/SSEClient';
+import { sseClient, type DNSContentMessage } from '@src/utils/SSEClient';
 import { api } from '@app/utils/fetchUtils';
+import { tryAsync } from '@src/utils/try';
 
 interface DnsLogStore {
   // State
-  driverInfo: { current: any; available: string[] } | null;
+  driverInfo: { current: DriverStatus; available: string[] } | null;
   content: DriverContentResponse | null;
   loading: boolean;
   contentLoading: boolean;
@@ -15,8 +16,8 @@ interface DnsLogStore {
   
   // Actions
   fetchDriverInfo: () => Promise<void>;
-  getContent: (filter?: Record<string, any>) => Promise<void>;
-  setDriver: (driver: string, options?: Record<string, any>) => Promise<void>;
+  getContent: (filter?: Record<string, unknown>) => Promise<void>;
+  setDriver: (driver: string, options?: Record<string, unknown>) => Promise<void>;
   clearContent: () => Promise<void>;
   clearError: () => void;
   connectSSE: () => void;
@@ -39,89 +40,91 @@ export const useDnsLogStore = create<DnsLogStore>((set, get) => ({
   fetchDriverInfo: async () => {
     set({ loading: true, error: null });
     
-    try {
-      const data = await api.get('/api/dns/log');
-      set({ driverInfo: data });
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch logs driver info';
+    const [data, error] = await tryAsync(() => api.get('/api/dns/log'));
+    
+    if (error) {
+      const errorMessage = error.message || 'Failed to fetch logs driver info';
       set({ error: errorMessage });
       console.error('Failed to fetch logs driver info:', error);
-    } finally {
-      set({ loading: false });
+    } else {
+      set({ driverInfo: data });
     }
+    
+    set({ loading: false });
   },
 
-  getContent: async (filter?: Record<string, any>) => {
+  getContent: async (filter?: Record<string, unknown>) => {
     set({ contentLoading: true, error: null });
     
-    try {
-      const config: Partial<DriverConfig> = {
-        method: DRIVER_METHODS.GET,
-        filter
-      };
+    const config: Partial<DriverConfig> = {
+      method: DRIVER_METHODS.GET,
+      filter
+    };
 
-      const data: DriverContentResponse = await api.post('/api/dns/log', config);
-      set({ content: data });
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to get logs content';
+    const [data, error] = await tryAsync(() => api.post('/api/dns/log', config));
+    
+    if (error) {
+      const errorMessage = error.message || 'Failed to get logs content';
       set({ error: errorMessage });
       console.error('Failed to get logs content:', error);
       useSnackbarStore.getState().showAlert(errorMessage, 'Logs Content Error');
-    } finally {
-      set({ contentLoading: false });
+    } else {
+      set({ content: data as DriverContentResponse });
     }
+    
+    set({ contentLoading: false });
   },
 
-  setDriver: async (driver: string, options?: Record<string, any>) => {
+  setDriver: async (driver: string, options?: Record<string, unknown>) => {
     set({ loading: true, error: null });
     
-    try {
-      const config: Partial<DriverConfig> = {
-        method: DRIVER_METHODS.SET,
-        driver,
-        options
-      };
+    const config: Partial<DriverConfig> = {
+      method: DRIVER_METHODS.SET,
+      driver,
+      options
+    };
 
-      await api.post('/api/dns/log', config, {
-        showSuccess: true,
-        successMessage: 'Logs driver updated successfully'
-      });
-      
-      // Refresh driver info after successful change
-      await get().fetchDriverInfo();
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to set logs driver';
+    const [, error] = await tryAsync(() => api.post('/api/dns/log', config, {
+      showSuccess: true,
+      successMessage: 'Logs driver updated successfully'
+    }));
+    
+    if (error) {
+      const errorMessage = error.message || 'Failed to set logs driver';
       set({ error: errorMessage });
       console.error('Failed to set logs driver:', error);
       useSnackbarStore.getState().showAlert(errorMessage, 'Logs Driver Error');
-    } finally {
-      set({ loading: false });
+    } else {
+      // Refresh driver info after successful change
+      await get().fetchDriverInfo();
     }
+    
+    set({ loading: false });
   },
 
   clearContent: async () => {
     set({ loading: true, error: null });
     
-    try {
-      const config: Partial<DriverConfig> = {
-        method: DRIVER_METHODS.CLEAR
-      };
+    const config: Partial<DriverConfig> = {
+      method: DRIVER_METHODS.CLEAR
+    };
 
-      await api.post('/api/dns/log', config, {
-        showSuccess: true,
-        successMessage: 'Logs cleared successfully'
-      });
-      
-      // Clear the content in the store after successful API call
-      set({ content: null });
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to clear logs';
+    const [, error] = await tryAsync(() => api.post('/api/dns/log', config, {
+      showSuccess: true,
+      successMessage: 'Logs cleared successfully'
+    }));
+    
+    if (error) {
+      const errorMessage = error.message || 'Failed to clear logs';
       set({ error: errorMessage });
       console.error('Failed to clear logs:', error);
       useSnackbarStore.getState().showAlert(errorMessage, 'Clear Logs Error');
-    } finally {
-      set({ loading: false });
+    } else {
+      // Clear the content in the store after successful API call
+      set({ content: null });
     }
+    
+    set({ loading: false });
   },
 
   clearError: () => {
@@ -134,8 +137,20 @@ export const useDnsLogStore = create<DnsLogStore>((set, get) => ({
 
     // Subscribe to logs content updates
     const contentUnsubscriber = sseClient.subscribe('dns/log/', (logData) => {
-      if (logData) {
-        set({ content: logData });
+      if (logData && 'driver' in logData) {
+        const contentMessage = logData as DNSContentMessage;
+        const content: DriverContentResponse = {
+          success: true,
+          scope: 'logs',
+          driver: contentMessage.driver,
+          entries: contentMessage.entries || [],
+          timestamp: contentMessage.lastUpdated,
+          metadata: {
+            total: contentMessage.count,
+            timestamp: new Date(contentMessage.lastUpdated).toISOString()
+          }
+        };
+        set({ content });
       }
     });
 

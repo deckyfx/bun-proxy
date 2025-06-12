@@ -1,7 +1,32 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { api } from '@app/utils/fetchUtils';
-import type { DNSStatus, DNSToggleResponse } from '@src/types';
+import type { DnsServerStatus } from '@src/types/dns-unified';
+import { tryAsync } from '@src/utils/try';
+
+interface DNSStatus {
+  enabled: boolean;
+  isRunning: boolean;
+  port: number;
+  nextdnsConfigId?: string;
+  canUseLowPorts: boolean;
+  platform: string;
+  isPrivilegedPort: boolean;
+  enableWhitelist: boolean;
+  secondaryDns: string;
+  server?: {
+    port: number;
+    providers: string[];
+  };
+  providers: string[];
+}
+
+interface DNSToggleResponse {
+  isRunning: boolean;
+  port?: number;
+  error?: string;
+  status?: DNSStatus;
+}
 
 interface GeneralSettings {
   siteName: string;
@@ -57,52 +82,53 @@ export const useSettingsStore = create<SettingsState>()(
       saveSettings: async () => {
         set({ isLoading: true, error: null });
         
-        try {
-          // For now, just simulate saving - you can implement actual API call later
-          await new Promise(resolve => setTimeout(resolve, 500));
-          
-          // Show success message using the api utility's built-in success handling
-          console.log('Settings saved successfully!');
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Failed to save settings';
+        const [, error] = await tryAsync(() => new Promise(resolve => setTimeout(resolve, 500)));
+        
+        if (error) {
+          const errorMessage = error.message || 'Failed to save settings';
           set({ error: errorMessage });
           console.error('Failed to save settings:', error);
-        } finally {
-          set({ isLoading: false });
+        } else {
+          // Show success message using the api utility's built-in success handling
+          console.log('Settings saved successfully!');
         }
+        
+        set({ isLoading: false });
       },
 
       fetchDnsStatus: async () => {
         set({ dnsLoading: true, error: null });
         
-        try {
-          const data: DNSStatus = await api.get('/api/dns/status');
-          set({ dnsStatus: data });
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Failed to fetch DNS status';
+        const [data, error] = await tryAsync(() => api.get('/api/dns/status'));
+        
+        if (error) {
+          const errorMessage = error.message || 'Failed to fetch DNS status';
           set({ error: errorMessage });
           console.error('Failed to fetch DNS status:', error);
-        } finally {
-          set({ dnsLoading: false });
+        } else {
+          set({ dnsStatus: data as DNSStatus });
         }
+        
+        set({ dnsLoading: false });
       },
 
       toggleDnsServer: async () => {
         set({ dnsLoading: true, error: null });
         
-        try {
-          const data: DNSToggleResponse = await api.post('/api/dns/toggle', undefined, {
-            showSuccess: true,
-            successMessage: 'DNS server toggled successfully'
-          });
-          set({ dnsStatus: data.status });
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Failed to toggle DNS server';
+        const [data, error] = await tryAsync(() => api.post('/api/dns/toggle', undefined, {
+          showSuccess: true,
+          successMessage: 'DNS server toggled successfully'
+        }));
+        
+        if (error) {
+          const errorMessage = error.message || 'Failed to toggle DNS server';
           set({ error: errorMessage });
           console.error('Failed to toggle DNS server:', error);
-        } finally {
-          set({ dnsLoading: false });
+        } else {
+          set({ dnsStatus: (data as DNSToggleResponse).status });
         }
+        
+        set({ dnsLoading: false });
       },
 
       clearError: () => {

@@ -1,11 +1,16 @@
-import type { BlacklistEntry, BlacklistOptions, BlacklistStats } from './BaseDriver';
-import { BaseDriver } from './BaseDriver';
-import { readFile, writeFile, mkdir, appendFile } from 'fs/promises';
-import { join } from 'path';
+import type {
+  BlacklistEntry,
+  BlacklistOptions,
+  BlacklistStats,
+} from "./BaseDriver";
+import { BaseDriver } from "./BaseDriver";
+import { readFile, writeFile, mkdir, appendFile } from "fs/promises";
+import { join } from "path";
+import { tryAsync, trySync, tryParse } from "@src/utils/try";
 
 /**
  * High-performance FileDriver for blacklist using Write-Ahead Logging (WAL)
- * 
+ *
  * Performance optimizations:
  * 1. Bloom filter for fast negative lookups
  * 2. Write-Ahead Log for fast writes
@@ -14,33 +19,36 @@ import { join } from 'path';
  * 5. Periodic compaction
  */
 export class OptimizedFileDriver extends BaseDriver {
-  static readonly DRIVER_NAME = 'optimized-file';
-  
+  static override readonly DRIVER_NAME = "optimized-file";
+
   private dataDir: string;
   private mainFile: string;
   private walFile: string;
   private indexFile: string;
-  
+
   // In-memory structures for fast access
   private bloomFilter?: Set<string>; // Simple bloom filter simulation
   private domainIndex = new Map<string, boolean>(); // Domain -> exists mapping
-  private walEntries = new Map<string, { action: 'add' | 'remove', entry?: BlacklistEntry }>();
-  
+  private walEntries = new Map<
+    string,
+    { action: "add" | "remove"; entry?: BlacklistEntry }
+  >();
+
   // Performance settings
   private maxWalSize = 1000; // Compact WAL after this many operations
   private indexLoaded = false;
-  
+
   // Batch operation buffers
   private pendingWrites = new Map<string, BlacklistEntry>();
   private pendingDeletes = new Set<string>();
   private writeTimeout?: NodeJS.Timeout;
-  
+
   constructor(options: BlacklistOptions = {}) {
     super(options);
-    this.dataDir = options.filePath || './data/blacklist';
-    this.mainFile = join(this.dataDir, 'domains.json');
-    this.walFile = join(this.dataDir, 'wal.log');
-    this.indexFile = join(this.dataDir, 'index.json');
+    this.dataDir = options.filePath || "./data/blacklist";
+    this.mainFile = join(this.dataDir, "domains.json");
+    this.walFile = join(this.dataDir, "wal.log");
+    this.indexFile = join(this.dataDir, "index.json");
   }
 
   /**
@@ -48,33 +56,42 @@ export class OptimizedFileDriver extends BaseDriver {
    */
   private async ensureIndexLoaded(): Promise<void> {
     if (this.indexLoaded) return;
-    
-    try {
-      await this.ensureDirectoryExists();
-      
-      // Try to load existing index
-      const indexContent = await readFile(this.indexFile, 'utf8');
-      const indexData = JSON.parse(indexContent);
-      
-      // Load domain index (just domain names and their existence)
-      for (const domain of indexData.domains || []) {
-        this.domainIndex.set(domain, true);
-      }
-      
-      // Load bloom filter approximation
-      this.bloomFilter = new Set(indexData.domains || []);
-      
-    } catch (error) {
-      if ((error as any)?.code !== 'ENOENT') {
-        console.warn('Failed to load blacklist index:', error);
+
+    const [, dirError] = await tryAsync(() => this.ensureDirectoryExists());
+    if (dirError) {
+      console.warn("Failed to ensure directory exists:", dirError);
+      return;
+    }
+
+    // Try to load existing index
+    const [indexContent, readError] = await tryAsync(() => readFile(this.indexFile, "utf8"));
+    if (readError) {
+      if ((readError as any)?.code !== "ENOENT") {
+        console.warn("Failed to load blacklist index:", readError);
       }
       // If index doesn't exist, we'll rebuild it
       await this.rebuildIndex();
+      return;
     }
-    
+
+    const [indexData, parseError] = tryParse<{ domains?: string[]; bloomFilter?: number[] }>(indexContent);
+    if (parseError) {
+      console.warn("Failed to parse blacklist index:", parseError);
+      await this.rebuildIndex();
+      return;
+    }
+
+    // Load domain index (just domain names and their existence)
+    for (const domain of indexData.domains || []) {
+      this.domainIndex.set(domain, true);
+    }
+
+    // Load bloom filter approximation
+    this.bloomFilter = new Set(indexData.domains || []);
+
     // Always load WAL entries to get latest changes
     await this.loadWalEntries();
-    
+
     this.indexLoaded = true;
   }
 
@@ -82,31 +99,45 @@ export class OptimizedFileDriver extends BaseDriver {
    * Load WAL entries that haven't been compacted yet
    */
   private async loadWalEntries(): Promise<void> {
-    try {
-      const walContent = await readFile(this.walFile, 'utf8');
-      const lines = walContent.trim().split('\n').filter(line => line);
-      
-      for (const line of lines) {
-        try {
-          const walEntry = JSON.parse(line);
-          const domain = this.normalizeDomain(walEntry.domain);
-          
-          if (walEntry.action === 'add') {
-            this.walEntries.set(domain, { action: 'add', entry: walEntry.entry });
-            this.domainIndex.set(domain, true);
-            this.bloomFilter?.add(domain);
-          } else if (walEntry.action === 'remove') {
-            this.walEntries.set(domain, { action: 'remove' });
-            this.domainIndex.set(domain, false);
-            this.bloomFilter?.delete(domain);
-          }
-        } catch (e) {
-          console.warn('Invalid WAL entry:', line);
-        }
+    const [walContent, walError] = await tryAsync(() => readFile(this.walFile, "utf8"));
+    if (walError) {
+      if ((walError as any)?.code !== "ENOENT") {
+        console.warn("Failed to load WAL:", walError);
       }
-    } catch (error) {
-      if ((error as any)?.code !== 'ENOENT') {
-        console.warn('Failed to load WAL:', error);
+      return;
+    }
+
+    const lines = walContent
+      .trim()
+      .split("\n")
+      .filter((line) => line);
+
+    for (const line of lines) {
+      const [walEntry, parseError] = tryParse<{
+        operation: string;
+        action?: string;
+        domain: string;
+        entry?: BlacklistEntry;
+      }>(line);
+      
+      if (parseError) {
+        console.warn("Invalid WAL entry:", line);
+        continue;
+      }
+      
+      const domain = this.normalizeDomain(walEntry.domain);
+
+      if ((walEntry.action || walEntry.operation) === "add") {
+        this.walEntries.set(domain, {
+          action: "add",
+          entry: walEntry.entry,
+        });
+        this.domainIndex.set(domain, true);
+        this.bloomFilter?.add(domain);
+      } else if ((walEntry.action || walEntry.operation) === "remove") {
+        this.walEntries.set(domain, { action: "remove" });
+        this.domainIndex.set(domain, false);
+        this.bloomFilter?.delete(domain);
       }
     }
   }
@@ -116,20 +147,20 @@ export class OptimizedFileDriver extends BaseDriver {
    */
   async contains(domain: string): Promise<boolean> {
     await this.ensureIndexLoaded();
-    
+
     const normalizedDomain = this.normalizeDomain(domain);
-    
+
     // Bloom filter check (fast negative lookup)
     if (!this.bloomFilter?.has(normalizedDomain)) {
       return false;
     }
-    
+
     // Check WAL first (most recent changes)
     const walEntry = this.walEntries.get(normalizedDomain);
     if (walEntry) {
-      return walEntry.action === 'add';
+      return walEntry.action === "add";
     }
-    
+
     // Check index
     return this.domainIndex.get(normalizedDomain) === true;
   }
@@ -139,9 +170,9 @@ export class OptimizedFileDriver extends BaseDriver {
    */
   async isBlocked(domain: string): Promise<boolean> {
     await this.ensureIndexLoaded();
-    
+
     const normalizedDomain = this.normalizeDomain(domain);
-    
+
     // Check exact match first (fastest path)
     if (await this.contains(normalizedDomain)) {
       return true;
@@ -158,11 +189,11 @@ export class OptimizedFileDriver extends BaseDriver {
   private async checkPatternMatches(domain: string): Promise<boolean> {
     // Check WAL entries first
     for (const [walDomain, walEntry] of this.walEntries.entries()) {
-      if (walEntry.action === 'add' && this.matchesPattern(domain, walDomain)) {
+      if (walEntry.action === "add" && this.matchesPattern(domain, walDomain)) {
         return true;
       }
     }
-    
+
     // If no pattern matches in WAL, we'd need to check main file
     // For performance, we might want to keep pattern domains in a separate index
     return false;
@@ -173,23 +204,23 @@ export class OptimizedFileDriver extends BaseDriver {
    */
   async add(domain: string, reason?: string, category?: string): Promise<void> {
     const normalizedDomain = this.normalizeDomain(domain);
-    
+
     const entry: BlacklistEntry = {
       domain: normalizedDomain,
       reason,
-      addedAt: new Date(),
-      source: 'manual',
-      category
+      addedAt: Date.now(),
+      source: "manual",
+      category,
     };
 
     // Add to pending writes for batching
     this.pendingWrites.set(normalizedDomain, entry);
     this.pendingDeletes.delete(normalizedDomain);
-    
+
     // Update in-memory structures immediately for fast reads
     this.domainIndex.set(normalizedDomain, true);
     this.bloomFilter?.add(normalizedDomain);
-    
+
     // Schedule batch write
     this.scheduleBatchWrite();
   }
@@ -199,23 +230,23 @@ export class OptimizedFileDriver extends BaseDriver {
    */
   async remove(domain: string): Promise<boolean> {
     await this.ensureIndexLoaded();
-    
+
     const normalizedDomain = this.normalizeDomain(domain);
     const exists = this.domainIndex.get(normalizedDomain) === true;
-    
+
     if (!exists) return false;
-    
+
     // Add to pending deletes
     this.pendingDeletes.add(normalizedDomain);
     this.pendingWrites.delete(normalizedDomain);
-    
+
     // Update in-memory structures immediately
     this.domainIndex.set(normalizedDomain, false);
     this.bloomFilter?.delete(normalizedDomain);
-    
+
     // Schedule batch write
     this.scheduleBatchWrite();
-    
+
     return true;
   }
 
@@ -226,7 +257,7 @@ export class OptimizedFileDriver extends BaseDriver {
     if (this.writeTimeout) {
       clearTimeout(this.writeTimeout);
     }
-    
+
     // Batch writes every 100ms for performance
     this.writeTimeout = setTimeout(async () => {
       await this.flushPendingOperations();
@@ -238,40 +269,58 @@ export class OptimizedFileDriver extends BaseDriver {
    */
   private async flushPendingOperations(): Promise<void> {
     const operations: string[] = [];
-    
+
     // Process pending writes
     for (const [domain, entry] of this.pendingWrites.entries()) {
       const walEntry = {
-        action: 'add' as const,
+        action: "add" as const,
         domain,
         entry,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       };
-      operations.push(JSON.stringify(walEntry));
-      this.walEntries.set(domain, { action: 'add', entry });
+      const [jsonString, jsonError] = trySync(() => JSON.stringify(walEntry));
+      if (jsonError) {
+        console.error("Failed to serialize WAL entry:", jsonError);
+        continue;
+      }
+      operations.push(jsonString);
+      this.walEntries.set(domain, { action: "add", entry });
     }
-    
+
     // Process pending deletes
     for (const domain of this.pendingDeletes) {
       const walEntry = {
-        action: 'remove' as const,
+        action: "remove" as const,
         domain,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       };
-      operations.push(JSON.stringify(walEntry));
-      this.walEntries.set(domain, { action: 'remove' });
+      const [jsonString, jsonError] = trySync(() => JSON.stringify(walEntry));
+      if (jsonError) {
+        console.error("Failed to serialize WAL entry:", jsonError);
+        continue;
+      }
+      operations.push(jsonString);
+      this.walEntries.set(domain, { action: "remove" });
     }
-    
+
     // Write to WAL if we have operations
     if (operations.length > 0) {
-      await this.ensureDirectoryExists();
-      await appendFile(this.walFile, operations.join('\n') + '\n');
+      const [, dirError] = await tryAsync(() => this.ensureDirectoryExists());
+      if (dirError) {
+        console.error("Failed to ensure directory exists:", dirError);
+        return;
+      }
+      const [, writeError] = await tryAsync(() => appendFile(this.walFile, operations.join("\n") + "\n"));
+      if (writeError) {
+        console.error("Failed to write to WAL:", writeError);
+        return;
+      }
     }
-    
+
     // Clear pending operations
     this.pendingWrites.clear();
     this.pendingDeletes.clear();
-    
+
     // Check if we need to compact
     if (this.walEntries.size >= this.maxWalSize) {
       await this.compactWal();
@@ -282,72 +331,83 @@ export class OptimizedFileDriver extends BaseDriver {
    * Compact WAL by merging with main file
    */
   private async compactWal(): Promise<void> {
-    try {
-      // Load existing entries from main file
-      const existingEntries = new Map<string, BlacklistEntry>();
-      
-      try {
-        const mainContent = await readFile(this.mainFile, 'utf8');
-        const mainData = JSON.parse(mainContent) as BlacklistEntry[];
-        
+    // Load existing entries from main file
+    const existingEntries = new Map<string, BlacklistEntry>();
+
+    const [mainContent, mainError] = await tryAsync(() => readFile(this.mainFile, "utf8"));
+    if (!mainError) {
+      const [mainData, parseError] = tryParse<BlacklistEntry[]>(mainContent);
+      if (!parseError) {
         for (const entry of mainData) {
           existingEntries.set(entry.domain, entry);
         }
-      } catch (error) {
-        // Main file doesn't exist yet, that's ok
       }
-      
-      // Apply WAL operations
-      for (const [domain, walEntry] of this.walEntries.entries()) {
-        if (walEntry.action === 'add' && walEntry.entry) {
-          existingEntries.set(domain, walEntry.entry);
-        } else if (walEntry.action === 'remove') {
-          existingEntries.delete(domain);
-        }
-      }
-      
-      // Write compacted data to main file
-      const compactedData = Array.from(existingEntries.values());
-      await writeFile(this.mainFile, JSON.stringify(compactedData, null, 2));
-      
-      // Rebuild index
-      await this.rebuildIndex();
-      
-      // Clear WAL
-      this.walEntries.clear();
-      await writeFile(this.walFile, '');
-      
-      console.log(`Compacted blacklist: ${compactedData.length} entries`);
-      
-    } catch (error) {
-      console.error('Failed to compact WAL:', error);
+      // If parse error, main file exists but is corrupted - continue with empty entries
     }
+    // If main file doesn't exist yet, that's ok - continue with empty entries
+
+    // Apply WAL operations
+    for (const [domain, walEntry] of this.walEntries.entries()) {
+      if (walEntry.action === "add" && walEntry.entry) {
+        existingEntries.set(domain, walEntry.entry);
+      } else if (walEntry.action === "remove") {
+        existingEntries.delete(domain);
+      }
+    }
+
+    // Write compacted data to main file
+    const compactedData = Array.from(existingEntries.values());
+    const [, writeError] = await tryAsync(() => writeFile(this.mainFile, JSON.stringify(compactedData, null, 2)));
+    if (writeError) {
+      console.error("Failed to compact WAL:", writeError);
+      return;
+    }
+
+    // Rebuild index
+    await this.rebuildIndex();
+
+    // Clear WAL
+    this.walEntries.clear();
+    const [, walClearError] = await tryAsync(() => writeFile(this.walFile, ""));
+    if (walClearError) {
+      console.error("Failed to clear WAL file:", walClearError);
+      return;
+    }
+
+    console.log(`Compacted blacklist: ${compactedData.length} entries`);
   }
 
   /**
    * Rebuild index from main file
    */
   private async rebuildIndex(): Promise<void> {
-    try {
-      const content = await readFile(this.mainFile, 'utf8');
-      const data = JSON.parse(content) as BlacklistEntry[];
-      
-      const domains = data.map(entry => entry.domain);
-      
-      // Update in-memory structures
-      this.domainIndex.clear();
-      for (const domain of domains) {
-        this.domainIndex.set(domain, true);
-      }
-      
-      this.bloomFilter = new Set(domains);
-      
-      // Save index to file
-      const indexData = { domains, lastCompacted: Date.now() };
-      await writeFile(this.indexFile, JSON.stringify(indexData));
-      
-    } catch (error) {
-      console.warn('Failed to rebuild index:', error);
+    const [content, readError] = await tryAsync(() => readFile(this.mainFile, "utf8"));
+    if (readError) {
+      console.warn("Failed to rebuild index:", readError);
+      return;
+    }
+
+    const [data, parseError] = tryParse<BlacklistEntry[]>(content);
+    if (parseError) {
+      console.warn("Failed to rebuild index:", parseError);
+      return;
+    }
+
+    const domains = data.map((entry) => entry.domain);
+
+    // Update in-memory structures
+    this.domainIndex.clear();
+    for (const domain of domains) {
+      this.domainIndex.set(domain, true);
+    }
+
+    this.bloomFilter = new Set(domains);
+
+    // Save index to file
+    const indexData = { domains, lastCompacted: Date.now() };
+    const [, writeError] = await tryAsync(() => writeFile(this.indexFile, JSON.stringify(indexData)));
+    if (writeError) {
+      console.warn("Failed to write index file:", writeError);
     }
   }
 
@@ -356,40 +416,41 @@ export class OptimizedFileDriver extends BaseDriver {
    */
   async list(category?: string): Promise<BlacklistEntry[]> {
     await this.ensureIndexLoaded();
-    
+
     // Force compaction to get accurate list
     await this.flushPendingOperations();
-    
+
     const entries = new Map<string, BlacklistEntry>();
-    
+
     // Load from main file
-    try {
-      const content = await readFile(this.mainFile, 'utf8');
-      const data = JSON.parse(content) as BlacklistEntry[];
-      
-      for (const entry of data) {
-        entries.set(entry.domain, entry);
+    const [content, readError] = await tryAsync(() => readFile(this.mainFile, "utf8"));
+    if (!readError) {
+      const [data, parseError] = tryParse<BlacklistEntry[]>(content);
+      if (!parseError) {
+        for (const entry of data) {
+          entries.set(entry.domain, entry);
+        }
       }
-    } catch (error) {
-      // Main file doesn't exist, that's ok
+      // If parse error, continue with empty entries (file corrupted)
     }
-    
+    // If main file doesn't exist, that's ok - continue with empty entries
+
     // Apply WAL operations
     for (const [domain, walEntry] of this.walEntries.entries()) {
-      if (walEntry.action === 'add' && walEntry.entry) {
+      if (walEntry.action === "add" && walEntry.entry) {
         entries.set(domain, walEntry.entry);
-      } else if (walEntry.action === 'remove') {
+      } else if (walEntry.action === "remove") {
         entries.delete(domain);
       }
     }
-    
+
     let result = Array.from(entries.values());
-    
+
     if (category) {
-      result = result.filter(entry => entry.category === category);
+      result = result.filter((entry) => entry.category === category);
     }
-    
-    return result.sort((a, b) => b.addedAt.getTime() - a.addedAt.getTime());
+
+    return result.sort((a, b) => b.addedAt - a.addedAt);
   }
 
   async clear(): Promise<void> {
@@ -398,30 +459,44 @@ export class OptimizedFileDriver extends BaseDriver {
     this.walEntries.clear();
     this.pendingWrites.clear();
     this.pendingDeletes.clear();
-    
+
     // Clear files
-    await this.ensureDirectoryExists();
-    await writeFile(this.mainFile, '[]');
-    await writeFile(this.walFile, '');
-    await writeFile(this.indexFile, '{"domains":[]}');
+    const [, dirError] = await tryAsync(() => this.ensureDirectoryExists());
+    if (dirError) {
+      console.error("Failed to ensure directory exists:", dirError);
+      return;
+    }
+    const [, mainError] = await tryAsync(() => writeFile(this.mainFile, "[]"));
+    if (mainError) {
+      console.error("Failed to clear main file:", mainError);
+    }
+    const [, walError] = await tryAsync(() => writeFile(this.walFile, ""));
+    if (walError) {
+      console.error("Failed to clear WAL file:", walError);
+    }
+    const [, indexError] = await tryAsync(() => writeFile(this.indexFile, '{"domains":[]}'));
+    if (indexError) {
+      console.error("Failed to clear index file:", indexError);
+    }
   }
 
   async stats(): Promise<BlacklistStats> {
     const entries = await this.list();
     const now = Date.now();
     const oneDayAgo = now - 24 * 60 * 60 * 1000;
-    
+
     const categories: Record<string, number> = {};
     const sources: Record<string, number> = {};
     let recentlyAdded = 0;
 
     for (const entry of entries) {
-      const category = entry.category || 'uncategorized';
+      const category = entry.category || "uncategorized";
       categories[category] = (categories[category] || 0) + 1;
-      
-      sources[entry.source] = (sources[entry.source] || 0) + 1;
-      
-      if (entry.addedAt.getTime() > oneDayAgo) {
+
+      const source = entry.source || "unknown";
+      sources[source] = (sources[source] || 0) + 1;
+
+      if (entry.addedAt > oneDayAgo) {
         recentlyAdded++;
       }
     }
@@ -430,13 +505,13 @@ export class OptimizedFileDriver extends BaseDriver {
       totalEntries: entries.length,
       categories,
       sources,
-      recentlyAdded
+      recentlyAdded,
     };
   }
 
   async cleanup(): Promise<void> {
     await this.flushPendingOperations();
-    
+
     // Auto-compact if WAL is getting large
     if (this.walEntries.size >= this.maxWalSize / 2) {
       await this.compactWal();
@@ -444,31 +519,36 @@ export class OptimizedFileDriver extends BaseDriver {
   }
 
   private async ensureDirectoryExists(): Promise<void> {
-    await mkdir(this.dataDir, { recursive: true });
+    const [, error] = await tryAsync(() => mkdir(this.dataDir, { recursive: true }));
+    if (error) {
+      throw error;
+    }
   }
 
   // Additional methods from BaseDriver interface...
   async getBlockingRule(domain: string): Promise<BlacklistEntry | null> {
     const entries = await this.list();
     const normalizedDomain = this.normalizeDomain(domain);
-    
+
     // Check exact match first
-    const exactMatch = entries.find(entry => entry.domain === normalizedDomain);
+    const exactMatch = entries.find(
+      (entry) => entry.domain === normalizedDomain
+    );
     if (exactMatch) return exactMatch;
-    
+
     // Check pattern matches
     for (const entry of entries) {
       if (this.matchesPattern(normalizedDomain, entry.domain)) {
         return entry;
       }
     }
-    
+
     return null;
   }
 
   async import(entries: BlacklistEntry[]): Promise<number> {
     let imported = 0;
-    
+
     for (const entry of entries) {
       const normalizedDomain = this.normalizeDomain(entry.domain);
       if (!this.domainIndex.has(normalizedDomain)) {
@@ -476,7 +556,7 @@ export class OptimizedFileDriver extends BaseDriver {
         imported++;
       }
     }
-    
+
     return imported;
   }
 

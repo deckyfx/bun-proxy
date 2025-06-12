@@ -1,6 +1,8 @@
 import { create } from 'zustand';
+import type { LogEntry, DnsLogEntry } from '@src/types/dns-unified';
 import { sseClient } from '@src/utils/SSEClient';
 import { api } from '@app/utils/fetchUtils';
+import { tryAsync } from '@src/utils/try';
 
 interface QueryMetrics {
   totalQueries: number;
@@ -58,7 +60,7 @@ interface DNSMetricsStore {
   fetchMetrics: () => Promise<void>;
   setTimeRange: (range: '1h' | '6h' | '24h' | '7d') => void;
   connectSSE: () => () => void;
-  updateMetricsFromLogEntry: (logEntry: any) => void;
+  updateMetricsFromLogEntry: (logEntry: LogEntry) => void;
   resetMetrics: () => void;
 }
 
@@ -97,21 +99,22 @@ export const useDNSMetricsStore = create<DNSMetricsStore>((set, get) => ({
 
   fetchMetrics: async () => {
     set({ loading: true });
-    try {
-      const { timeRange } = get();
-      // Server will aggregate metrics from all available drivers
-      const data = await api.get(`/api/dns/metrics?range=${timeRange}`);
+    
+    const { timeRange } = get();
+    const [data, error] = await tryAsync(() => api.get(`/api/dns/metrics?range=${timeRange}`));
+    
+    if (error) {
+      console.error('Failed to fetch DNS metrics:', error);
+    } else {
       set({ 
         metrics: {
           ...data,
           lastUpdated: new Date()
-        },
-        loading: false 
+        }
       });
-    } catch (error) {
-      console.error('Failed to fetch DNS metrics:', error);
-      set({ loading: false });
     }
+    
+    set({ loading: false });
   },
 
   setTimeRange: (range) => {
@@ -127,8 +130,8 @@ export const useDNSMetricsStore = create<DNSMetricsStore>((set, get) => ({
 
     // Subscribe to DNS log events for real-time metrics updates
     sseUnsubscriber = sseClient.subscribe('dns/log/event', (logEntry) => {
-      if (logEntry) {
-        get().updateMetricsFromLogEntry(logEntry);
+      if (logEntry && 'type' in logEntry && 'timestamp' in logEntry) {
+        get().updateMetricsFromLogEntry(logEntry as LogEntry);
       }
     });
 
@@ -147,11 +150,11 @@ export const useDNSMetricsStore = create<DNSMetricsStore>((set, get) => ({
     };
   },
 
-  updateMetricsFromLogEntry: (logEntry) => {
+  updateMetricsFromLogEntry: (logEntry: LogEntry) => {
     const currentMetrics = get().metrics;
     
-    // Only process response-type log entries for metrics
-    if (logEntry.type !== 'response') return;
+    // Only process DNS log entries for metrics (not server events)
+    if (logEntry.type === 'server_event' || !('processing' in logEntry)) return;
 
     const newQueryMetrics = { ...currentMetrics.queryMetrics };
     const newProviderMetrics = { ...currentMetrics.providerMetrics };
@@ -160,52 +163,54 @@ export const useDNSMetricsStore = create<DNSMetricsStore>((set, get) => ({
     newQueryMetrics.totalQueries += 1;
 
     // Update success/failure counts
-    if (logEntry.success) {
+    const dnsLogEntry = logEntry as DnsLogEntry;
+    if (dnsLogEntry.processing.success) {
       newQueryMetrics.successfulQueries += 1;
     } else {
       newQueryMetrics.failedQueries += 1;
     }
 
     // Update cached queries
-    if (logEntry.cached) {
+    if (dnsLogEntry.processing.cached) {
       newQueryMetrics.cachedQueries += 1;
     }
 
     // Update blocked queries
-    if (logEntry.blocked) {
+    if (dnsLogEntry.processing.blocked) {
       newQueryMetrics.blockedQueries += 1;
     }
 
     // Update whitelisted queries
-    if (logEntry.whitelisted) {
+    if (dnsLogEntry.processing.whitelisted) {
       newQueryMetrics.whitelistedQueries += 1;
     }
 
     // Update query types
-    if (logEntry.query?.type) {
-      newQueryMetrics.queryTypes[logEntry.query.type] = 
-        (newQueryMetrics.queryTypes[logEntry.query.type] || 0) + 1;
+    if (dnsLogEntry.query?.type) {
+      newQueryMetrics.queryTypes[dnsLogEntry.query.type] = 
+        (newQueryMetrics.queryTypes[dnsLogEntry.query.type] || 0) + 1;
     }
 
     // Update top domains
-    if (logEntry.query?.domain) {
-      const existingDomain = newQueryMetrics.topDomains.find(d => d.domain === logEntry.query.domain);
+    if (dnsLogEntry.query?.name) {
+      const existingDomain = newQueryMetrics.topDomains.find(d => d.domain === dnsLogEntry.query!.name);
       if (existingDomain) {
         existingDomain.count += 1;
       } else {
-        newQueryMetrics.topDomains.push({ domain: logEntry.query.domain, count: 1 });
+        newQueryMetrics.topDomains.push({ domain: dnsLogEntry.query.name, count: 1 });
       }
       // Keep only top 10 domains
       newQueryMetrics.topDomains.sort((a, b) => b.count - a.count).splice(10);
     }
 
     // Update provider metrics
-    if (logEntry.provider) {
-      newQueryMetrics.topProviders[logEntry.provider] = 
-        (newQueryMetrics.topProviders[logEntry.provider] || 0) + 1;
+    if (dnsLogEntry.processing.provider) {
+      const provider = dnsLogEntry.processing.provider;
+      newQueryMetrics.topProviders[provider] = 
+        (newQueryMetrics.topProviders[provider] || 0) + 1;
 
-      if (!newProviderMetrics[logEntry.provider]) {
-        newProviderMetrics[logEntry.provider] = {
+      if (!newProviderMetrics[provider]) {
+        newProviderMetrics[provider] = {
           totalQueries: 0,
           successfulQueries: 0,
           failedQueries: 0,
@@ -213,31 +218,31 @@ export const useDNSMetricsStore = create<DNSMetricsStore>((set, get) => ({
         };
       }
 
-      const providerMetric = newProviderMetrics[logEntry.provider]!;
+      const providerMetric = newProviderMetrics[provider]!;
       providerMetric.totalQueries += 1;
       providerMetric.lastUsed = new Date();
 
-      if (logEntry.success) {
+      if (dnsLogEntry.processing.success) {
         providerMetric.successfulQueries += 1;
       } else {
         providerMetric.failedQueries += 1;
-        newQueryMetrics.errorsByProvider[logEntry.provider] = 
-          (newQueryMetrics.errorsByProvider[logEntry.provider] || 0) + 1;
+        newQueryMetrics.errorsByProvider[provider] = 
+          (newQueryMetrics.errorsByProvider[provider] || 0) + 1;
       }
 
       // Update average response time
-      if (logEntry.responseTime) {
+      if (dnsLogEntry.processing.responseTime) {
         const totalResponseTime = providerMetric.averageResponseTime * (providerMetric.totalQueries - 1);
         providerMetric.averageResponseTime = 
-          (totalResponseTime + logEntry.responseTime) / providerMetric.totalQueries;
+          (totalResponseTime + dnsLogEntry.processing.responseTime) / providerMetric.totalQueries;
       }
     }
 
     // Update overall average response time
-    if (logEntry.responseTime) {
+    if (dnsLogEntry.processing.responseTime) {
       const totalResponseTime = newQueryMetrics.averageResponseTime * (newQueryMetrics.totalQueries - 1);
       newQueryMetrics.averageResponseTime = 
-        (totalResponseTime + logEntry.responseTime) / newQueryMetrics.totalQueries;
+        (totalResponseTime + dnsLogEntry.processing.responseTime) / newQueryMetrics.totalQueries;
     }
 
     set({

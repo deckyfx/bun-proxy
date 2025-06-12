@@ -1,5 +1,5 @@
 import { Table, type TableColumn } from "@app/components/index";
-import type { LogEntry } from "@src/dns/drivers/logs/BaseDriver";
+import type { LogEntry } from "@src/types/dns-unified";
 
 interface LogsStreamTabProps {
   logs: LogEntry[];
@@ -50,6 +50,7 @@ export default function LogsStreamTab({
             : "Connecting to log stream..."
         }
         onRowClick={onRowClick}
+        getRowKey={(log, index) => `${log.id}-${log.timestamp}-${index}`}
       />
     </div>
   );

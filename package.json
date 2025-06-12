@@ -22,7 +22,6 @@
     "test:hitdoh": "bun dev > ./server.log 2>&1 & DEV_PID=$!; bun test:doh > ./client.log 2>&1; kill $DEV_PID"
   },
   "dependencies": {
-    "@types/dns2": "^2.0.9",
     "dns-packet": "^5.6.1",
     "dns2": "^2.1.0",
     "drizzle-orm": "^0.43.1",
@@ -35,6 +34,7 @@
     "zustand": "^5.0.5"
   },
   "devDependencies": {
+    "@types/dns2": "^2.0.9",
     "@tailwindcss/cli": "^4.1.8",
     "@types/bun": "latest",
     "@types/dns-packet": "^5.6.5",

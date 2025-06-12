@@ -1,6 +1,8 @@
 import { BaseProvider } from "./BaseProvider";
 import * as dns from "dns";
+import type { Answer } from "dns-packet";
 import { promisify } from "util";
+import { tryAsync } from "@src/utils/try";
 
 export class SystemProvider extends BaseProvider {
   name = "system";
@@ -18,7 +20,7 @@ export class SystemProvider extends BaseProvider {
   }
 
   async resolve(query: Buffer): Promise<Buffer> {
-    try {
+    const [result, error] = await tryAsync(async () => {
       // Parse the DNS query to extract domain and type
       const dnsPacket = require('dns-packet');
       const parsed = dnsPacket.decode(query);
@@ -31,14 +33,13 @@ export class SystemProvider extends BaseProvider {
       const domain = question.name;
       const type = question.type;
 
-      let answers: any[] = [];
-
       // Handle different DNS record types using Node.js built-in DNS resolver
-      try {
+      const [answers, dnsError] = await tryAsync(async () => {
+        let results: Answer[] = [];
         switch (type) {
           case 'A':
             const ipv4Addresses = await this.resolveDns4(domain);
-            answers = ipv4Addresses.map(address => ({
+            results = ipv4Addresses.map(address => ({
               name: domain,
               type: 'A',
               class: 'IN',
@@ -49,7 +50,7 @@ export class SystemProvider extends BaseProvider {
 
           case 'AAAA':
             const ipv6Addresses = await this.resolveDns6(domain);
-            answers = ipv6Addresses.map(address => ({
+            results = ipv6Addresses.map(address => ({
               name: domain,
               type: 'AAAA',
               class: 'IN',
@@ -60,7 +61,7 @@ export class SystemProvider extends BaseProvider {
 
           case 'MX':
             const mxRecords = await this.resolveMx(domain);
-            answers = mxRecords.map(mx => ({
+            results = mxRecords.map(mx => ({
               name: domain,
               type: 'MX',
               class: 'IN',
@@ -74,7 +75,7 @@ export class SystemProvider extends BaseProvider {
 
           case 'TXT':
             const txtRecords = await this.resolveTxt(domain);
-            answers = txtRecords.map(txt => ({
+            results = txtRecords.map(txt => ({
               name: domain,
               type: 'TXT',
               class: 'IN',
@@ -85,7 +86,7 @@ export class SystemProvider extends BaseProvider {
 
           case 'CNAME':
             const cnameRecords = await this.resolveCname(domain);
-            answers = cnameRecords.map(cname => ({
+            results = cnameRecords.map(cname => ({
               name: domain,
               type: 'CNAME',
               class: 'IN',
@@ -96,7 +97,7 @@ export class SystemProvider extends BaseProvider {
 
           case 'NS':
             const nsRecords = await this.resolveNs(domain);
-            answers = nsRecords.map(ns => ({
+            results = nsRecords.map(ns => ({
               name: domain,
               type: 'NS',
               class: 'IN',
@@ -107,7 +108,7 @@ export class SystemProvider extends BaseProvider {
 
           case 'PTR':
             const ptrRecords = await this.resolvePtr(domain);
-            answers = ptrRecords.map(ptr => ({
+            results = ptrRecords.map(ptr => ({
               name: domain,
               type: 'PTR',
               class: 'IN',
@@ -119,13 +120,13 @@ export class SystemProvider extends BaseProvider {
           default:
             // For unsupported types, try generic resolve
             const genericRecords = await this.resolveDns(domain, type);
-            answers = Array.isArray(genericRecords) ? genericRecords.map(record => ({
+            results = Array.isArray(genericRecords) ? genericRecords.map(record => ({
               name: domain,
               type: type,
               class: 'IN',
               ttl: 300,
               data: record
-            })) : [{
+            } as unknown as Answer)) : [{
               name: domain,
               type: type,
               class: 'IN',
@@ -134,7 +135,10 @@ export class SystemProvider extends BaseProvider {
             }];
             break;
         }
-      } catch (dnsError: any) {
+        return results;
+      });
+      
+      if (dnsError) {
         // If DNS resolution fails, return NXDOMAIN response
         const errorResponse = {
           id: parsed.id,
@@ -142,7 +146,7 @@ export class SystemProvider extends BaseProvider {
           flags: 384, // QR=1, RD=1
           questions: parsed.questions,
           answers: [],
-          rcode: dnsError.code === 'ENOTFOUND' ? 3 : 2 // NXDOMAIN or SERVFAIL
+          rcode: (dnsError as any)?.code === 'ENOTFOUND' ? 3 : 2 // NXDOMAIN or SERVFAIL
         };
         return Buffer.from(dnsPacket.encode(errorResponse));
       }
@@ -153,13 +157,14 @@ export class SystemProvider extends BaseProvider {
         type: 'response',
         flags: 384, // QR=1, RD=1
         questions: parsed.questions,
-        answers: answers,
+        answers: answers!,
         rcode: 0 // NOERROR
       };
 
       return Buffer.from(dnsPacket.encode(response));
+    });
 
-    } catch (error) {
+    if (error) {
       // If parsing fails, return SERVFAIL
       const errorResponse = {
         id: 0,
@@ -171,5 +176,7 @@ export class SystemProvider extends BaseProvider {
       };
       return Buffer.from(require('dns-packet').encode(errorResponse));
     }
+
+    return result!;
   }
 }

@@ -20,6 +20,17 @@ export const DRIVER_METHODS = {
 export type DriverType = typeof DRIVER_TYPES[keyof typeof DRIVER_TYPES];
 export type DriverMethod = typeof DRIVER_METHODS[keyof typeof DRIVER_METHODS];
 
+// Interface for driver constructors with DRIVER_NAME property
+export interface DriverConstructor {
+  readonly DRIVER_NAME: string;
+  new (...args: unknown[]): unknown;
+}
+
+// Type for driver instances that have a constructor with DRIVER_NAME
+export interface DriverInstance {
+  constructor: DriverConstructor;
+}
+
 export interface DriverConfig {
   method: DriverMethod;
   scope: DriverType;
@@ -69,19 +80,68 @@ export interface DriversResponse {
   available: AvailableDrivers;
 }
 
-export interface DriverContentResponse {
+// Import types for proper content typing
+import type { BlacklistEntry } from '@src/dns/drivers/blacklist/BaseDriver';
+import type { WhitelistEntry } from '@src/dns/drivers/whitelist/BaseDriver';
+import type { LogEntry } from '@src/types/dns-unified';
+import type { CachedDnsResponse } from '@src/types/dns-unified';
+
+// Specific response types for different driver operations
+export interface DriverListResponse {
   success: boolean;
-  scope?: DriverType;
-  driver?: string;
-  content?: any;
-  error?: string;
-  timestamp?: number;
-  metadata?: {
-    total?: number;
+  scope: DriverType;
+  driver: string;
+  entries: BlacklistEntry[] | WhitelistEntry[] | LogEntry[] | CachedDnsResponse[];
+  timestamp: number;
+  metadata: {
+    total: number;
     filtered?: number;
-    timestamp?: string;
+    timestamp: string;
   };
 }
+
+export interface DriverCheckResponse {
+  success: boolean;
+  scope: DriverType;
+  driver: string;
+  exists: boolean;
+  key: string;
+  timestamp: number;
+}
+
+export interface DriverActionResponse {
+  success: boolean;
+  scope: DriverType;
+  driver: string;
+  message: string;
+  timestamp: number;
+  affected?: number; // For bulk operations
+}
+
+export interface DriverImportResponse {
+  success: boolean;
+  scope: DriverType;
+  driver: string;
+  message: string;
+  imported: number;
+  timestamp: number;
+}
+
+export interface DriverErrorResponse {
+  success: false;
+  scope?: DriverType;
+  driver?: string;
+  error: string;
+  timestamp: number;
+}
+
+// Union type for all driver responses
+export type DriverContentResponse = 
+  | DriverListResponse 
+  | DriverCheckResponse 
+  | DriverActionResponse 
+  | DriverImportResponse 
+  | DriverErrorResponse;
 
 export interface DriverSetResponse {
   message: string;

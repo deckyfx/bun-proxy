@@ -1,13 +1,15 @@
 import { dnsManager } from "@src/dns";
 import { Auth, type AuthUser } from "@utils/auth";
-import type { DNSToggleResponse } from "@typed/dns";
+import type { DnsToggleResponse } from "@src/types/api";
+import type { BunRequest } from "bun";
+import { tryAsync } from "@src/utils/try";
 
-export async function Toggle(_req: any, _user: AuthUser): Promise<Response> {
-  try {
+export async function Toggle(_req: BunRequest, _user: AuthUser): Promise<Response> {
+  const [result, error] = await tryAsync(async () => {
     const isEnabled = await dnsManager.toggle();
     const managerStatus = dnsManager.getStatus();
 
-    const response: DNSToggleResponse = {
+    const response: DnsToggleResponse = {
       message: `DNS server ${isEnabled ? "started" : "stopped"} successfully`,
       enabled: isEnabled,
       status: {
@@ -20,14 +22,13 @@ export async function Toggle(_req: any, _user: AuthUser): Promise<Response> {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
-  } catch (error) {
+  });
+
+  if (error) {
     console.error("DNS toggle error:", error);
     return new Response(
       JSON.stringify({
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to toggle DNS server",
+        error: error.message,
       }),
       {
         status: 500,
@@ -35,6 +36,8 @@ export async function Toggle(_req: any, _user: AuthUser): Promise<Response> {
       }
     );
   }
+
+  return result;
 }
 
 export default {

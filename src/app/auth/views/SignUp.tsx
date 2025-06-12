@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useAuthStore } from "@app_stores/authStore";
 import { useValidationStore } from "@app_stores/validationStore";
 import { Button, FloatingLabelInput } from "@app_components/index";
+import { tryAsync } from '@src/utils/try';
 
 export default function SignUp() {
   const [email, setEmail] = useState("");
@@ -62,9 +63,11 @@ export default function SignUp() {
 
     setIsLoading(true);
 
-    try {
-      await signup({ email, username, password, name, confirmPassword });
+    const [, error] = await tryAsync(() => signup({ email, username, password, name, confirmPassword }));
 
+    if (error) {
+      setError(error.message);
+    } else {
       // Show success alert
       alert("Account created successfully! Redirecting to sign in...");
 
@@ -77,11 +80,9 @@ export default function SignUp() {
       setPassword("");
       setName("");
       setConfirmPassword("");
-    } catch (error: any) {
-      setError(error.message);
-    } finally {
-      setIsLoading(false);
     }
+
+    setIsLoading(false);
   };
 
   return (

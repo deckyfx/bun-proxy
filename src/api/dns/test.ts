@@ -2,132 +2,147 @@ import { promisify } from 'util';
 import { dnsManager } from '@src/dns';
 import Config from "@src/config";
 import { Auth, type AuthUser } from "@utils/auth";
-import type { DNSTestRequest, DNSTestResponse } from '@typed/dns';
+import type { DnsTestRequest, DnsTestResponse } from '@src/types/api';
 import { dnsManager as DNSManagerSingleton } from '@src/dns';
+import type { BunRequest } from 'bun';
+import { tryParse, tryAsync, trySync } from '@src/utils/try';
 
-export async function Test(req: any, _user: AuthUser): Promise<Response> {
-  try {
-    const body = await req.text();
-    const { domain, configId }: DNSTestRequest = JSON.parse(body);
-
-    if (!domain || !configId) {
-      const response: DNSTestResponse = {
-        success: false,
-        domain: domain || '',
-        configId: configId || '',
-        error: 'Domain and configId are required',
-      };
-      return Response.json(response, { status: 400 });
-    }
-
-    try {
-      const currentStatus = dnsManager.getStatus();
-      let wasRunning = currentStatus.enabled;
-      let originalPort = currentStatus.server?.port;
-
-      // If server is running, restart it with the test config
-      if (wasRunning) {
-        await dnsManager.stop();
-      }
-
-      // Start server with the test configId
-      await dnsManager.start(originalPort || Config.DNS_PORT, {
-        nextdnsConfigId: configId,
-      });
-
-      // Test DNS resolution using our DNS server
-      const { Resolver } = await import('dns');
-      const resolver = new Resolver();
-      resolver.setServers([`127.0.0.1:${originalPort || Config.DNS_PORT}`]);
-      
-      const resolveA = promisify(resolver.resolve4.bind(resolver));
-      
-      // Wait a moment for server to be ready
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      const addresses = await resolveA(domain);
-      
-      // Restore original server state
-      await dnsManager.stop();
-      if (wasRunning) {
-        await dnsManager.start(originalPort, {
-          nextdnsConfigId: dnsManager.getCurrentNextDnsConfigId(),
-        });
-      }
-
-      const response: DNSTestResponse = {
-        success: true,
-        domain,
-        configId,
-        resolvedAddress: Array.isArray(addresses) ? addresses[0] : addresses,
-      };
-
-      return Response.json(response);
-    } catch (dnsError) {
-      // Ensure we restore the original state even if test fails
-      try {
-        const currentStatus = dnsManager.getStatus();
-        await dnsManager.stop();
-        if (currentStatus.enabled) {
-          await dnsManager.start();
-        }
-      } catch (restoreError) {
-        console.error("Failed to restore DNS server state:", restoreError);
-      }
-
-      const response: DNSTestResponse = {
-        success: false,
-        domain,
-        configId,
-        error: `DNS resolution failed: ${dnsError instanceof Error ? dnsError.message : 'Unknown error'}`,
-      };
-
-      return Response.json(response);
-    }
-  } catch (error) {
-    console.error("DNS test error:", error);
+export async function Test(req: BunRequest, _user: AuthUser): Promise<Response> {
+  const [body, bodyError] = await tryAsync(() => req.text());
+  if (bodyError) {
     return Response.json({
       success: false,
       domain: '',
       configId: '',
-      error: error instanceof Error ? error.message : 'Failed to parse request',
-    }, { status: 500 });
+      error: 'Failed to read request body',
+    }, { status: 400 });
   }
+
+  const [parsedBody, parseError] = tryParse<DnsTestRequest>(body);
+  if (parseError) {
+    return Response.json({
+      success: false,
+      domain: '',
+      configId: '',
+      error: 'Failed to parse request',
+    }, { status: 400 });
+  }
+
+  const { domain, configId } = parsedBody;
+
+  if (!domain || !configId) {
+    const response: DnsTestResponse = {
+      success: false,
+      domain: domain || '',
+      configId: configId || '',
+      error: 'Domain and configId are required',
+    };
+    return Response.json(response, { status: 400 });
+  }
+
+  const [testResult, testError] = await tryAsync(async () => {
+    const currentStatus = dnsManager.getStatus();
+    let wasRunning = currentStatus.enabled;
+    let originalPort = currentStatus.server?.port;
+
+    // If server is running, restart it with the test config
+    if (wasRunning) {
+      await dnsManager.stop();
+    }
+
+    // Start server with the test configId
+    await dnsManager.start(originalPort || Config.DNS_PORT, {
+      nextdnsConfigId: configId,
+    });
+
+    // Test DNS resolution using our DNS server
+    const { Resolver } = await import('dns');
+    const resolver = new Resolver();
+    resolver.setServers([`127.0.0.1:${originalPort || Config.DNS_PORT}`]);
+    
+    const resolveA = promisify(resolver.resolve4.bind(resolver));
+    
+    // Wait a moment for server to be ready
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    const addresses = await resolveA(domain);
+    
+    // Restore original server state
+    await dnsManager.stop();
+    if (wasRunning) {
+      await dnsManager.start(originalPort, {
+        nextdnsConfigId: dnsManager.getCurrentNextDnsConfigId(),
+      });
+    }
+
+    return {
+      success: true,
+      domain,
+      configId,
+      resolvedAddress: Array.isArray(addresses) ? addresses[0] : addresses,
+    } as DnsTestResponse;
+  });
+
+  if (testError) {
+    // Ensure we restore the original state even if test fails
+    const [, restoreError] = await tryAsync(async () => {
+      const currentStatus = dnsManager.getStatus();
+      await dnsManager.stop();
+      if (currentStatus.enabled) {
+        await dnsManager.start();
+      }
+    });
+    
+    if (restoreError) {
+      console.error("Failed to restore DNS server state:", restoreError);
+    }
+
+    const response: DnsTestResponse = {
+      success: false,
+      domain,
+      configId,
+      error: `DNS resolution failed: ${testError.message}`,
+    };
+
+    return Response.json(response);
+  }
+
+  return Response.json(testResult);
 }
 
 export async function POST(request: Request): Promise<Response> {
-  try {
-    const body = await request.json();
-    const { method, domain, port = 53 } = body;
-
-    if (!domain || typeof domain !== 'string') {
-      return Response.json(
-        { error: "Domain is required" },
-        { status: 400 }
-      );
-    }
-
-    if (method === 'UDP') {
-      // Test UDP DNS query regardless of server status
-      const result = await testUDPQuery(domain, port);
-      return Response.json(result);
-    }
-
+  const [body, bodyError] = await tryAsync(() => request.json());
+  if (bodyError) {
+    console.error("DNS test error:", bodyError);
     return Response.json(
-      { error: "Unsupported test method" },
+      { error: "Failed to parse request body" },
       { status: 400 }
     );
-  } catch (error) {
-    console.error("DNS test error:", error);
+  }
+
+  const { method, domain, port = 53 } = body;
+
+  if (!domain || typeof domain !== 'string') {
     return Response.json(
-      { error: "Internal server error" },
-      { status: 500 }
+      { error: "Domain is required" },
+      { status: 400 }
     );
   }
+
+  if (method === 'UDP') {
+    // Test UDP DNS query regardless of server status
+    const result = await testUDPQuery(domain, port);
+    return Response.json(result);
+  }
+
+  return Response.json(
+    { error: "Unsupported test method" },
+    { status: 400 }
+  );
 }
 
 async function testUDPQuery(domain: string, port: number) {
-  try {
+  const [result, error] = await tryAsync(async () => {
     // Use DNS resolver directly, bypassing the UDP server
     const resolver = DNSManagerSingleton.getResolver();
     
@@ -153,13 +168,17 @@ async function testUDPQuery(domain: string, port: number) {
       ips,
       details: `Resolved via internal resolver (${result.responseBuffer.length} bytes, cached: ${result.cached})`
     };
-  } catch (error) {
+  });
+
+  if (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: error.message,
       details: "Failed to resolve via internal DNS resolver"
     };
   }
+
+  return result;
 }
 
 function createDNSQuery(domain: string): Buffer {
@@ -207,12 +226,12 @@ function createDNSQuery(domain: string): Buffer {
 function parseDNSResponse(response: Buffer): string[] {
   const ips: string[] = [];
   
-  try {
-    if (response.length < 12) return ips;
+  const [, error] = trySync(() => {
+    if (response.length < 12) return;
     
     const ancount = response.readUInt16BE(6); // Answer count
     
-    if (ancount === 0) return ips;
+    if (ancount === 0) return;
     
     // Skip header and question section
     let offset = 12;
@@ -264,7 +283,9 @@ function parseDNSResponse(response: Buffer): string[] {
       
       offset += dataLength;
     }
-  } catch (error) {
+  });
+  
+  if (error) {
     console.warn('Error parsing DNS response:', error);
   }
   

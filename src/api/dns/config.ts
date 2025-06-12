@@ -1,10 +1,27 @@
 import { dnsManager } from "@src/dns";
 import config from "@src/config";
 import { Auth, type AuthUser } from "@utils/auth";
-import type { DNSConfigResponse, DNSConfig } from "@typed/dns";
+import type { DnsServerStatus } from "@src/types/dns-unified";
+import type { BunRequest } from "bun";
+import { trySync } from "@src/utils/try";
 
-export async function Config(_req: any, _user: AuthUser): Promise<Response> {
-  try {
+interface DNSConfig {
+  port: number;
+  nextdnsConfigId?: string;
+  providers: string[];
+  canUseLowPorts: boolean;
+  platform: string;
+  isPrivilegedPort: boolean;
+  enableWhitelist: boolean;
+  secondaryDns: 'cloudflare' | 'google' | 'opendns';
+}
+
+interface DNSConfigResponse {
+  config: DNSConfig;
+}
+
+export async function Config(_req: BunRequest, _user: AuthUser): Promise<Response> {
+  const [result, error] = trySync(() => {
     const status = dnsManager.getStatus();
 
     // Build DNS configuration
@@ -27,13 +44,17 @@ export async function Config(_req: any, _user: AuthUser): Promise<Response> {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
-  } catch (error) {
+  });
+
+  if (error) {
     console.error("DNS config error:", error);
     return new Response(JSON.stringify({ error: "Failed to get DNS config" }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
     });
   }
+
+  return result;
 }
 
 export default {

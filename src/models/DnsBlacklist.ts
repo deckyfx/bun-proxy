@@ -2,6 +2,7 @@ import { eq, desc, sql } from "drizzle-orm";
 import { db } from "@db/index";
 import { dnsBlacklist, type DnsBlacklistType, type DnsBlacklistInsert } from "@db/schema";
 import type { BlacklistEntry, BlacklistStats } from "@src/dns/drivers/blacklist/BaseDriver";
+import { tryAsync } from "@src/utils/try";
 
 export class DnsBlacklist {
   static async add(domain: string, reason?: string, category?: string): Promise<DnsBlacklistType> {
@@ -56,11 +57,11 @@ export class DnsBlacklist {
     
     const results = await whereQuery.orderBy(desc(dnsBlacklist.addedAt));
     return results.map(row => {
-      const data = JSON.parse(row.data);
+      const data: BlacklistEntry = JSON.parse(row.data);
       return {
         domain: row.domain,
         reason: data.reason,
-        addedAt: new Date(row.addedAt),
+        addedAt: row.addedAt,
         source: row.source as "manual" | "auto" | "import",
         category: data.category,
       };
@@ -86,11 +87,11 @@ export class DnsBlacklist {
     if (result.length === 0) return null;
 
     const row = result[0]!;
-    const data = JSON.parse(row.data);
+    const data: BlacklistEntry = JSON.parse(row.data);
     return {
       domain: row.domain,
       reason: data.reason,
-      addedAt: new Date(row.addedAt),
+      addedAt: row.addedAt,
       source: row.source as "manual" | "auto" | "import",
       category: data.category,
     };
@@ -103,17 +104,18 @@ export class DnsBlacklist {
       const data = { reason: entry.reason, category: entry.category };
       const insertData: DnsBlacklistInsert = {
         domain: this.normalizeDomain(entry.domain),
-        addedAt: entry.addedAt.getTime(),
+        addedAt: entry.addedAt,
         source: "import" as const,
         data: JSON.stringify(data),
       };
 
-      try {
-        await db.insert(dnsBlacklist).values(insertData).onConflictDoNothing();
+      const [, error] = await tryAsync(() => 
+        db.insert(dnsBlacklist).values(insertData).onConflictDoNothing()
+      );
+      if (!error) {
         imported++;
-      } catch (error) {
-        // Skip duplicates
       }
+      // Skip duplicates on error
     }
     
     return imported;
@@ -122,11 +124,11 @@ export class DnsBlacklist {
   static async export(): Promise<BlacklistEntry[]> {
     const results = await db.select().from(dnsBlacklist).orderBy(desc(dnsBlacklist.addedAt));
     return results.map(row => {
-      const data = JSON.parse(row.data);
+      const data: BlacklistEntry = JSON.parse(row.data);
       return {
         domain: row.domain,
         reason: data.reason,
-        addedAt: new Date(row.addedAt),
+        addedAt: row.addedAt,
         source: row.source as "manual" | "auto" | "import",
         category: data.category,
       };

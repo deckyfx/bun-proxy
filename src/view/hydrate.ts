@@ -1,12 +1,11 @@
-import { getAccessTokenFromRequest, verifyAccessToken } from "@utils/auth";
-import { type UserType } from "@db/schema";
+import { Auth } from "@utils/auth";
 import Config from "@src/config";
 
 async function HydrateRoute(
   req: Bun.BunRequest<"/hydrate">
 ): Promise<Response> {
-  const token = getAccessTokenFromRequest(req);
-  const user = token ? verifyAccessToken<UserType>(token) : null;
+  const token = Auth.getAccessTokenFromRequest(req);
+  const user = token ? Auth.verifyAccessToken(token) : null;
   if (!user && !Config.DEBUG_BYPASS_AUTH) {
     const cookies = req.cookies;
     cookies.set("access_token", "");

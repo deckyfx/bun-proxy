@@ -1,11 +1,12 @@
-import { BaseDriver, type LogEntry, type LogOptions, type LogFilter } from './BaseDriver';
+import { BaseDriver, type LogOptions, type LogFilter } from "./BaseDriver";
+import type { LogEntry } from "@src/types/dns-unified";
 
 export class ConsoleDriver extends BaseDriver {
-  static readonly DRIVER_NAME = 'console';
-  
+  static override readonly DRIVER_NAME = "console";
+
   private logCount = 0;
-  private firstLogTime?: Date;
-  private lastLogTime?: Date;
+  private firstLogTime?: number;
+  private lastLogTime?: number;
 
   constructor(options: LogOptions = {}) {
     super(options);
@@ -13,94 +14,101 @@ export class ConsoleDriver extends BaseDriver {
 
   async log(entry: LogEntry): Promise<void> {
     this.logCount++;
-    this.lastLogTime = new Date();
+    this.lastLogTime = entry.timestamp;
     if (!this.firstLogTime) {
-      this.firstLogTime = new Date();
+      this.firstLogTime = entry.timestamp;
     }
 
     // Format log entry for console output
-    const timestamp = entry.timestamp.toISOString();
+    const timestamp = new Date(entry.timestamp).toISOString();
     const level = entry.level.toUpperCase().padEnd(5);
-    const requestId = entry.requestId.substring(0, 8); // Short ID for display
-    
+    const requestId = entry.id.substring(0, 8); // Short ID for display
+
     let logMessage: string;
-    
-    if (entry.type === 'server_event') {
-      // Server event log format
-      logMessage = `[${timestamp}] ${level} ➤ SRV ${entry.eventType?.toUpperCase() || 'UNKNOWN'}: ${entry.message} [${requestId}]`;
-      
-      if (entry.port) {
-        logMessage += ` (port: ${entry.port})`;
-      }
-      
-      if (entry.error) {
-        logMessage += ` - Error: ${entry.error}`;
-      }
-      
-      if (entry.uptime) {
-        logMessage += ` (uptime: ${Math.floor(entry.uptime / 60)}m ${entry.uptime % 60}s)`;
-      }
-      
-    } else if (entry.type === 'request') {
+
+    if (entry.type === "request") {
       // Request log format
-      const domain = entry.query.domain;
-      const queryType = entry.query.type;
-      
+      const domain = entry.query?.name || "unknown";
+      const queryType = entry.query?.type || "unknown";
+
       const indicators = [];
-      if (entry.cached) indicators.push('🔄');
-      if (entry.blocked) indicators.push('🚫');
-      if (entry.whitelisted) indicators.push('✅');
-      const statusStr = indicators.length > 0 ? ` ${indicators.join('')}` : '';
-      
-      const providerStr = entry.provider ? ` → ${entry.provider}` : ' → selecting...';
-      const attemptStr = entry.attempt > 1 ? ` [attempt ${entry.attempt}]` : '';
-      
-      logMessage = `[${timestamp}] ${level} ➤ REQ ${domain} (${queryType})${providerStr}${statusStr}${attemptStr} [${requestId}]`;
-      
-    } else if (entry.type === 'response') {
+      if (entry.processing.cached) indicators.push("🔄");
+      if (entry.processing.blocked) indicators.push("🚫");
+      if (entry.processing.whitelisted) indicators.push("✅");
+      const statusStr = indicators.length > 0 ? ` ${indicators.join("")}` : "";
+
+      const providerStr = entry.processing.provider
+        ? ` → ${entry.processing.provider}`
+        : " → selecting...";
+      const transportStr = entry.client.transport
+        ? ` [${entry.client.transport.toUpperCase()}]`
+        : "";
+
+      logMessage = `[${timestamp}] ${level} ➤ REQ ${domain} (${queryType})${providerStr}${statusStr}${transportStr} [${requestId}]`;
+    } else if (entry.type === "response") {
       // Response log format
-      const domain = entry.query.domain;
-      const queryType = entry.query.type;
-      const success = entry.success ? '✓' : '✗';
-      const responseTime = `${entry.responseTime}ms`;
-      
+      const domain = entry.query?.name || "unknown";
+      const queryType = entry.query?.type || "unknown";
+      const success = entry.processing.success ? "✓" : "✗";
+      const responseTime = entry.processing.responseTime
+        ? `${entry.processing.responseTime}ms`
+        : "N/A";
+
       const indicators = [];
-      if (entry.cached) indicators.push('🔄');
-      if (entry.blocked) indicators.push('🚫');
-      if (entry.whitelisted) indicators.push('✅');
-      const statusStr = indicators.length > 0 ? ` ${indicators.join('')}` : '';
-      
-      const attemptStr = entry.attempt > 1 ? ` [attempt ${entry.attempt}]` : '';
-      
-      logMessage = `[${timestamp}] ${level} ➤ RES ${success} ${domain} (${queryType}) via ${entry.provider} (${responseTime})${statusStr}${attemptStr} [${requestId}]`;
-      
-      if (entry.response?.resolvedAddresses?.length) {
-        logMessage += ` → ${entry.response.resolvedAddresses.slice(0, 2).join(', ')}${entry.response.resolvedAddresses.length > 2 ? '...' : ''}`;
-      }
-      
-      if (entry.error) {
-        logMessage += ` - Error: ${entry.error}`;
-        if (entry.errorCode) {
-          logMessage += ` (${entry.errorCode})`;
+      if (entry.processing.cached) indicators.push("🔄");
+      if (entry.processing.blocked) indicators.push("🚫");
+      if (entry.processing.whitelisted) indicators.push("✅");
+      const statusStr = indicators.length > 0 ? ` ${indicators.join("")}` : "";
+
+      const provider = entry.processing.provider || "unknown";
+      const transportStr = entry.client.transport
+        ? ` [${entry.client.transport.toUpperCase()}]`
+        : "";
+
+      logMessage = `[${timestamp}] ${level} ➤ RES ${success} ${domain} (${queryType}) via ${provider} (${responseTime})${statusStr}${transportStr} [${requestId}]`;
+
+      // Try to extract resolved addresses from packet answers
+      if (entry.packet?.answers?.length) {
+        const addresses = entry.packet.answers
+          .filter((answer) => answer.type === "A" || answer.type === "AAAA")
+          .map((answer) => (answer as any).data)
+          .filter(Boolean)
+          .slice(0, 2);
+
+        if (addresses.length > 0) {
+          logMessage += ` → ${addresses.join(", ")}${
+            entry.packet.answers.length > 2 ? "..." : ""
+          }`;
         }
       }
+
+      if (entry.processing.error) {
+        logMessage += ` - Error: ${entry.processing.error}`;
+      }
+    } else if (entry.type === "error") {
+      // Error log format
+      const domain = entry.query?.name || "unknown";
+      const queryType = entry.query?.type || "unknown";
+
+      logMessage = `[${timestamp}] ${level} ➤ ERR ${domain} (${queryType}) - ${
+        entry.processing.error || "Unknown error"
+      } [${requestId}]`;
     } else {
       // Fallback for unknown log types
-      logMessage = `[${timestamp}] ${level} ➤ UNKNOWN ${(entry as any).type}: ${JSON.stringify(entry)} [${requestId}]`;
+      logMessage = `[${timestamp}] ${level} ➤ UNKNOWN ${
+        (entry as any).type
+      }: ${JSON.stringify(entry)} [${requestId}]`;
     }
 
     // Use appropriate console method based on log level
     switch (entry.level) {
-      case 'error':
+      case "error":
         console.error(logMessage);
         break;
-      case 'warn':
+      case "warn":
         console.warn(logMessage);
         break;
-      case 'debug':
-        console.debug(logMessage);
-        break;
-      case 'info':
+      case "info":
       default:
         console.log(logMessage);
         break;
@@ -109,7 +117,9 @@ export class ConsoleDriver extends BaseDriver {
 
   async getLogs(filter?: LogFilter): Promise<LogEntry[]> {
     // Console driver doesn't persist logs, so return empty array
-    console.warn('ConsoleDriver: getLogs() called but no logs are persisted. Consider using FileDriver or SQLiteDriver for log retrieval.');
+    console.warn(
+      "ConsoleDriver: getLogs() called but no logs are persisted. Consider using FileDriver or SQLiteDriver for log retrieval."
+    );
     return [];
   }
 
@@ -118,19 +128,23 @@ export class ConsoleDriver extends BaseDriver {
     this.logCount = 0;
     this.firstLogTime = undefined;
     this.lastLogTime = undefined;
-    console.log('ConsoleDriver: Log counters reset');
+    console.log("ConsoleDriver: Log counters reset");
   }
 
   async cleanup(): Promise<void> {
     // No cleanup needed for console output
-    console.log('ConsoleDriver: No cleanup required for console output');
+    console.log("ConsoleDriver: No cleanup required for console output");
   }
 
-  async stats(): Promise<{ totalEntries: number; oldestEntry?: Date; newestEntry?: Date }> {
+  async stats(): Promise<{
+    totalEntries: number;
+    oldestEntry?: number;
+    newestEntry?: number;
+  }> {
     return {
       totalEntries: this.logCount,
       oldestEntry: this.firstLogTime,
-      newestEntry: this.lastLogTime
+      newestEntry: this.lastLogTime,
     };
   }
 }

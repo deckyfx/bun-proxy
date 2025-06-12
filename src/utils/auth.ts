@@ -1,13 +1,15 @@
 import jwt from "jsonwebtoken";
 
 import type { BunRequest } from "bun";
+import type { UserType } from "@db/schema/user";
 
 import Config from "@src/config";
+import { trySync } from './try';
 
-export interface AuthUser {
-  id: string;
-  email: string;
-  [key: string]: any;
+// JWT payload should not include sensitive data like password
+export interface AuthUser extends Omit<UserType, 'id' | 'password'> {
+  id: string; // JWT typically uses string IDs
+  [key: string]: unknown; // Allow for additional JWT claims
 }
 
 export interface TokenPair {
@@ -33,7 +35,10 @@ export class AuthMiddleware {
       return {
         id: "dev-user",
         email: "dev@localhost",
-        role: "admin",
+        username: "dev",
+        password: "", // Not used in dev mode
+        name: "Developer",
+        last_login: null,
       };
     }
 
@@ -45,41 +50,35 @@ export class AuthMiddleware {
     return this.verifyAccessToken(token);
   }
 
-  generateTokens<T extends Record<string, any>>(data: T): TokenPair {
+  generateTokens(data: AuthUser): TokenPair {
     return {
       accessToken: this.generateAccessToken(data),
       refreshToken: this.generateRefreshToken(data),
     };
   }
 
-  generateAccessToken<T extends Record<string, any>>(data: T): string {
+  generateAccessToken(data: AuthUser): string {
     return jwt.sign(data, Config.JWT_ACCESS_SECRET, { expiresIn: "15m" });
   }
 
-  generateRefreshToken<T extends Record<string, any>>(data: T): string {
+  generateRefreshToken(data: AuthUser): string {
     return jwt.sign(data, Config.JWT_REFRESH_SECRET, { expiresIn: "7d" });
   }
 
-  verifyAccessToken<T extends Record<string, any> = AuthUser>(
-    token: string
-  ): T | null {
-    try {
-      const decoded = jwt.verify(token, Config.JWT_ACCESS_SECRET) as T;
-      return decoded;
-    } catch {
+  verifyAccessToken(token: string): AuthUser | null {
+    const [result, error] = trySync(() => jwt.verify(token, Config.JWT_ACCESS_SECRET) as AuthUser);
+    if (error) {
       return null;
     }
+    return result;
   }
 
-  verifyRefreshToken<T extends Record<string, any> = AuthUser>(
-    token: string
-  ): T | null {
-    try {
-      const decoded = jwt.verify(token, Config.JWT_REFRESH_SECRET) as T;
-      return decoded;
-    } catch {
+  verifyRefreshToken(token: string): AuthUser | null {
+    const [result, error] = trySync(() => jwt.verify(token, Config.JWT_REFRESH_SECRET) as AuthUser);
+    if (error) {
       return null;
     }
+    return result;
   }
 
   getAccessTokenFromRequest(req: BunRequest): string | null {
@@ -106,7 +105,7 @@ export class AuthMiddleware {
     });
   }
 
-  guard<T extends any[]>(
+  guard<T extends unknown[]>(
     handler: (req: BunRequest, user: AuthUser, ...args: T) => Promise<Response>
   ) {
     return async (req: BunRequest, ...args: T): Promise<Response> => {
@@ -120,38 +119,4 @@ export class AuthMiddleware {
 }
 
 // Export singleton instance for easy access
-export const authMiddleware = AuthMiddleware.getInstance();
 export const Auth = AuthMiddleware.getInstance();
-
-// Export legacy functions for backward compatibility
-export function generateAccessToken<T extends Record<string, any>>(
-  data: T
-): string {
-  return authMiddleware.generateAccessToken(data);
-}
-
-export function generateRefreshToken<T extends Record<string, any>>(
-  data: T
-): string {
-  return authMiddleware.generateRefreshToken(data);
-}
-
-export function verifyAccessToken<T extends Record<string, any> = any>(
-  token: string
-): T | null {
-  return authMiddleware.verifyAccessToken(token);
-}
-
-export function verifyRefreshToken<T extends Record<string, any> = any>(
-  token: string
-): T | null {
-  return authMiddleware.verifyRefreshToken(token);
-}
-
-export function getRefreshTokenFromRequest(req: BunRequest): string | null {
-  return authMiddleware.getRefreshTokenFromRequest(req);
-}
-
-export function getAccessTokenFromRequest(req: BunRequest): string | null {
-  return authMiddleware.getAccessTokenFromRequest(req);
-}

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useAuthStore } from "@app_stores/authStore";
 import { useValidationStore } from "@app_stores/validationStore";
 import { Button, FloatingLabelInput } from "@app_components/index";
+import { tryAsync } from '@src/utils/try';
 
 export default function SignIn() {
   const [emailOrUsername, setEmailOrUsername] = useState("");
@@ -29,13 +30,13 @@ export default function SignIn() {
     setError("");
     setIsLoading(true);
 
-    try {
-      await signin({ emailOrUsername, password });
-    } catch (error: any) {
+    const [, error] = await tryAsync(() => signin({ emailOrUsername, password }));
+
+    if (error) {
       setError(error.message);
-    } finally {
-      setIsLoading(false);
     }
+
+    setIsLoading(false);
   };
 
   return (

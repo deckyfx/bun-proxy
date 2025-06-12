@@ -1,5 +1,5 @@
-import { verifyAccessToken } from "@utils/auth";
-import { type UserType } from "@db/schema";
+import { Auth } from "@utils/auth";
+import { trySync } from "@src/utils/try";
 
 export async function Logout(
   req: Bun.BunRequest<"/api/:scope/:command">
@@ -7,16 +7,15 @@ export async function Logout(
   const authHeader = req.headers.get("authorization");
   const token = authHeader?.replace("Bearer ", "");
 
-  try {
-    const payload = verifyAccessToken<UserType>(token!);
-    const cookies = req.cookies;
-    cookies.set("access_token", "");
-    return Response.json(payload);
-  } catch {
-    const cookies = req.cookies;
-    cookies.set("access_token", "");
+  const [payload, error] = trySync(() => Auth.verifyAccessToken(token!));
+  const cookies = req.cookies;
+  cookies.set("access_token", "");
+  
+  if (error) {
     return new Response("Unauthorized", { status: 401 });
   }
+  
+  return Response.json(payload);
 }
 
 export default {

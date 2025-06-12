@@ -5,12 +5,15 @@ import {
   type AvailableDrivers,
   type DriversResponse,
 } from "@src/types/driver";
+import type { DNSResolverDrivers } from "@src/dns/resolver";
+import { getDriverName } from "./utils";
+import { trySync } from "@src/utils/try";
 
 
 // Get current driver status
 function getCurrentDriverStatus(): DriversResponse['current'] {
   const status = dnsManager.getStatus();
-  let drivers: any;
+  let drivers: DNSResolverDrivers;
 
   if (status.server) {
     // Server is running - get current drivers from actual server instance
@@ -32,22 +35,22 @@ function getCurrentDriverStatus(): DriversResponse['current'] {
   return {
     [DRIVER_TYPES.LOGS]: {
       type: DRIVER_TYPES.LOGS,
-      implementation: drivers.logs?.constructor.DRIVER_NAME || 'console',
+      implementation: getDriverName(drivers.logs),
       status: isServerRunning ? 'active' : 'inactive'
     },
     [DRIVER_TYPES.CACHE]: {
       type: DRIVER_TYPES.CACHE,
-      implementation: drivers.cache?.constructor.DRIVER_NAME || 'inmemory',
+      implementation: getDriverName(drivers.cache),
       status: isServerRunning ? 'active' : 'inactive'
     },
     [DRIVER_TYPES.BLACKLIST]: {
       type: DRIVER_TYPES.BLACKLIST,
-      implementation: drivers.blacklist?.constructor.DRIVER_NAME || 'inmemory',
+      implementation: getDriverName(drivers.blacklist),
       status: isServerRunning ? 'active' : 'inactive'
     },
     [DRIVER_TYPES.WHITELIST]: {
       type: DRIVER_TYPES.WHITELIST,
-      implementation: drivers.whitelist?.constructor.DRIVER_NAME || 'inmemory',
+      implementation: getDriverName(drivers.whitelist),
       status: isServerRunning ? 'active' : 'inactive'
     }
   };
@@ -66,7 +69,7 @@ function getAvailableDrivers(): AvailableDrivers {
 
 // GET /api/dns/driver - Get current driver configuration and available drivers
 export async function GetDriverConfiguration(_req: Request, _user: AuthUser): Promise<Response> {
-  try {
+  const [result, error] = trySync(() => {
     const current = getCurrentDriverStatus();
     const available = getAvailableDrivers();
 
@@ -79,15 +82,19 @@ export async function GetDriverConfiguration(_req: Request, _user: AuthUser): Pr
       status: 200,
       headers: { 'Content-Type': 'application/json' }
     });
-  } catch (error) {
+  });
+
+  if (error) {
     return new Response(JSON.stringify({
       error: 'Failed to get driver configuration',
-      message: error instanceof Error ? error.message : 'Unknown error'
+      message: error.message
     }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' }
     });
   }
+
+  return result;
 }
 
 export default {

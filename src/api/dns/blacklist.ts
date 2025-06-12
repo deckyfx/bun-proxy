@@ -1,7 +1,8 @@
 import { dnsManager } from "@src/dns/manager";
 import { dnsResolver } from "@src/dns/resolver";
 import { Auth, type AuthUser } from "@utils/auth";
-import { DRIVER_TYPES, DRIVER_METHODS, type DriverConfig, type DriverContentResponse } from "@src/types/driver";
+import { DRIVER_TYPES, DRIVER_METHODS, type DriverConfig, type DriverContentResponse, type DriverListResponse, type DriverCheckResponse, type DriverActionResponse, type DriverImportResponse, type DriverErrorResponse } from "@src/types/driver";
+import type { BlacklistEntry } from "@src/dns/drivers/blacklist/BaseDriver";
 import { dnsEventService } from "@src/dns/DNSEventService";
 import { 
   createBlacklistDriverInstance, 
@@ -9,70 +10,84 @@ import {
   isServerRunning, 
   createErrorResponse, 
   createSuccessResponse, 
-  checkServerAvailability 
+  checkServerAvailability,
+  getDriverName
 } from "./utils";
+import { trySync, tryAsync } from "@src/utils/try";
 
 // GET /api/dns/blacklist - Get blacklist driver configuration
 export async function GetBlacklistDriverInfo(_req: Request, _user: AuthUser): Promise<Response> {
-  try {
+  const [result, error] = trySync(() => {
     const drivers = getDrivers();
     const serverRunning = isServerRunning();
 
     const response = {
       current: {
         type: DRIVER_TYPES.BLACKLIST,
-        implementation: drivers.blacklist?.constructor.DRIVER_NAME || 'inmemory',
+        implementation: getDriverName(drivers.blacklist),
         status: serverRunning ? 'active' : 'inactive'
       },
       available: ['inmemory', 'file', 'sqlite']
     };
 
     return createSuccessResponse(response);
-  } catch (error) {
+  });
+
+  if (error) {
     return createErrorResponse(
       'Failed to get blacklist driver configuration',
-      error instanceof Error ? error.message : 'Unknown error'
+      error.message
     );
   }
+
+  return result;
 }
 
 // POST /api/dns/blacklist - Handle blacklist driver operations
 export async function HandleBlacklistDriverOperation(req: Request, _user: AuthUser): Promise<Response> {
-  try {
-    const body = await req.json() as DriverConfig;
+  const [result, error] = await tryAsync(async () => {
+    const [body, parseError] = await tryAsync(() => req.json());
+    if (parseError) {
+      return createErrorResponse('Invalid JSON', parseError.message, 400);
+    }
     
-    if (!body.method) {
+    const config = body as DriverConfig;
+    if (!config.method) {
       return createErrorResponse('Missing required field', 'method is required', 400);
     }
 
-    const config = { ...body, scope: DRIVER_TYPES.BLACKLIST };
+    const configWithScope = { ...config, scope: DRIVER_TYPES.BLACKLIST };
 
-    switch (config.method) {
+    switch (configWithScope.method) {
       case DRIVER_METHODS.SET:
-        return await setBlacklistDriver(config);
+        return await setBlacklistDriver(configWithScope);
       case DRIVER_METHODS.GET:
-        return await getBlacklistDriverContent(config);
+        return await getBlacklistDriverContent(configWithScope);
       case DRIVER_METHODS.CLEAR:
-        return await clearBlacklistDriver(config);
+        return await clearBlacklistDriver(configWithScope);
       case DRIVER_METHODS.ADD:
-        return await addBlacklistEntry(config);
+        return await addBlacklistEntry(configWithScope);
       case DRIVER_METHODS.REMOVE:
-        return await removeBlacklistEntry(config);
+        return await removeBlacklistEntry(configWithScope);
       case DRIVER_METHODS.UPDATE:
-        return await updateBlacklistEntry(config);
+        return await updateBlacklistEntry(configWithScope);
       case DRIVER_METHODS.IMPORT:
-        return await importBlacklistEntries(config);
+        return await importBlacklistEntries(configWithScope);
       case DRIVER_METHODS.EXPORT:
-        return await exportBlacklistEntries(config);
+        return await exportBlacklistEntries(configWithScope);
       default:
         return createErrorResponse('Invalid method', 'method must be SET, GET, CLEAR, ADD, REMOVE, UPDATE, IMPORT, or EXPORT', 400);
     }
-  } catch (error) {
+  });
+
+  if (error) {
     return createErrorResponse(
       'Failed to process blacklist driver operation',
-      error instanceof Error ? error.message : 'Unknown error'
+      error.message
     );
   }
+
+  return result;
 }
 
 async function setBlacklistDriver(config: DriverConfig): Promise<Response> {
@@ -80,8 +95,8 @@ async function setBlacklistDriver(config: DriverConfig): Promise<Response> {
     return createErrorResponse('Missing driver field', 'driver field is required for SET method', 400);
   }
 
-  try {
-    const newDriverInstance = createBlacklistDriverInstance(config.driver, config.options);
+  const [result, error] = await tryAsync(async () => {
+    const newDriverInstance = createBlacklistDriverInstance(config.driver!, config.options);
     const currentDrivers = dnsManager.getLastUsedDrivers();
     
     const updatedDrivers = { ...currentDrivers, blacklist: newDriverInstance };
@@ -95,84 +110,112 @@ async function setBlacklistDriver(config: DriverConfig): Promise<Response> {
       options: config.options,
       serverRunning: status.enabled
     });
-  } catch (error) {
+  });
+
+  if (error) {
     return createErrorResponse(
       'Failed to set blacklist driver',
-      error instanceof Error ? error.message : 'Unknown error'
+      error.message
     );
   }
+
+  return result;
 }
 
 async function getBlacklistDriverContent(config: DriverConfig): Promise<Response> {
   const serverError = checkServerAvailability();
   if (serverError) return serverError;
 
-  try {
+  const [result, error] = await tryAsync(async () => {
     const drivers = getDrivers();
     const blacklistDriver = drivers.blacklist;
-    let content: any = null;
     
-    if (blacklistDriver) {
-      if (config.key) {
-        // Get specific domain check
-        content = await blacklistDriver.contains(config.key);
-      } else {
-        // Get all entries
-        const category = config.filter?.category;
-        content = await blacklistDriver.list(category);
-        
-        // Apply additional filtering if specified
-        if (config.filter) {
-          if (config.filter.domain) {
-            content = content.filter((entry: any) => 
-              entry.domain.toLowerCase().includes(config.filter!.domain.toLowerCase())
-            );
-          }
-          if (config.filter.source) {
-            content = content.filter((entry: any) => entry.source === config.filter!.source);
-          }
-          if (config.filter.reason) {
-            content = content.filter((entry: any) => 
-              entry.reason && entry.reason.toLowerCase().includes(config.filter!.reason.toLowerCase())
-            );
-          }
-        }
-      }
-    } else {
-      content = 'Blacklist driver not available';
+    if (!blacklistDriver) {
+      const errorResponse: DriverErrorResponse = {
+        success: false,
+        scope: config.scope,
+        driver: 'none',
+        error: 'Blacklist driver not available',
+        timestamp: Date.now()
+      };
+      return new Response(JSON.stringify(errorResponse), {
+        status: 503,
+        headers: { 'Content-Type': 'application/json' }
+      });
     }
 
-    const response: DriverContentResponse = {
-      success: true,
-      scope: config.scope,
-      driver: drivers.blacklist?.constructor.DRIVER_NAME || 'unknown',
-      content,
-      metadata: {
-        total: Array.isArray(content) ? content.length : 0,
-        timestamp: new Date().toISOString()
+    if (config.key) {
+      // Check if specific domain exists
+      const exists = await blacklistDriver.contains(config.key!);
+      const checkResponse: DriverCheckResponse = {
+        success: true,
+        scope: config.scope,
+        driver: getDriverName(drivers.blacklist),
+        exists,
+        key: config.key,
+        timestamp: Date.now()
+      };
+      return createSuccessResponse(checkResponse);
+    } else {
+      // Get all entries
+      const category = config.filter?.category;
+      let entries = await blacklistDriver.list(category);
+      
+      // Apply additional filtering if specified
+      if (config.filter) {
+        if (config.filter.domain) {
+          entries = entries.filter((entry: BlacklistEntry) => 
+            entry.domain.toLowerCase().includes(config.filter!.domain.toLowerCase())
+          );
+        }
+        if (config.filter.source) {
+          entries = entries.filter((entry: BlacklistEntry) => entry.source === config.filter!.source);
+        }
+        if (config.filter.reason) {
+          entries = entries.filter((entry: BlacklistEntry) => 
+            entry.reason && entry.reason.toLowerCase().includes(config.filter!.reason.toLowerCase())
+          );
+        }
       }
-    };
 
-    return createSuccessResponse(response);
-  } catch (error) {
-    const response: DriverContentResponse = {
+      const listResponse: DriverListResponse = {
+        success: true,
+        scope: config.scope,
+        driver: getDriverName(drivers.blacklist),
+        entries,
+        timestamp: Date.now(),
+        metadata: {
+          total: entries.length,
+          filtered: config.filter ? entries.length : undefined,
+          timestamp: new Date().toISOString()
+        }
+      };
+      return createSuccessResponse(listResponse);
+    }
+  });
+
+  if (error) {
+    const errorResponse: DriverErrorResponse = {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      scope: config.scope,
+      error: error.message,
       timestamp: Date.now()
     };
     
-    return new Response(JSON.stringify(response), {
+    return new Response(JSON.stringify(errorResponse), {
       status: 500,
       headers: { 'Content-Type': 'application/json' }
     });
   }
+
+  return result;
 }
 
 async function clearBlacklistDriver(config: DriverConfig): Promise<Response> {
   const serverError = checkServerAvailability();
   if (serverError) return serverError;
 
-  try {
+  const [result, error] = await tryAsync(async () => {
     const drivers = getDrivers();
     const blacklistDriver = drivers.blacklist;
     let cleared = false;
@@ -193,15 +236,19 @@ async function clearBlacklistDriver(config: DriverConfig): Promise<Response> {
       success: cleared,
       message,
       scope: config.scope,
-      driver: drivers.blacklist?.constructor.DRIVER_NAME || 'unknown',
+      driver: getDriverName(drivers.blacklist),
       timestamp: new Date().toISOString()
     });
-  } catch (error) {
+  });
+
+  if (error) {
     return createErrorResponse(
       'Failed to clear blacklist driver',
-      error instanceof Error ? error.message : 'Unknown error'
+      error.message
     );
   }
+
+  return result;
 }
 
 async function addBlacklistEntry(config: DriverConfig): Promise<Response> {
@@ -212,7 +259,7 @@ async function addBlacklistEntry(config: DriverConfig): Promise<Response> {
     return createErrorResponse('Missing required field', 'key (domain) is required for ADD method', 400);
   }
 
-  try {
+  const [result, error] = await tryAsync(async () => {
     const drivers = getDrivers();
     const blacklistDriver = drivers.blacklist;
 
@@ -220,7 +267,7 @@ async function addBlacklistEntry(config: DriverConfig): Promise<Response> {
       return createErrorResponse('Blacklist driver not available', 'Blacklist driver does not support adding entries');
     }
 
-    await blacklistDriver.add(config.key, config.reason, config.category);
+    await blacklistDriver.add(config.key!, config.reason, config.category);
 
     // Emit SSE event for blacklist update
     dnsEventService.refreshDriverContent(DRIVER_TYPES.BLACKLIST);
@@ -232,12 +279,16 @@ async function addBlacklistEntry(config: DriverConfig): Promise<Response> {
       category: config.category,
       timestamp: new Date().toISOString()
     });
-  } catch (error) {
+  });
+
+  if (error) {
     return createErrorResponse(
       'Failed to add blacklist entry',
-      error instanceof Error ? error.message : 'Unknown error'
+      error.message
     );
   }
+
+  return result;
 }
 
 async function removeBlacklistEntry(config: DriverConfig): Promise<Response> {
@@ -248,7 +299,7 @@ async function removeBlacklistEntry(config: DriverConfig): Promise<Response> {
     return createErrorResponse('Missing required field', 'key (domain) is required for REMOVE method', 400);
   }
 
-  try {
+  const [result, error] = await tryAsync(async () => {
     const drivers = getDrivers();
     const blacklistDriver = drivers.blacklist;
 
@@ -256,7 +307,7 @@ async function removeBlacklistEntry(config: DriverConfig): Promise<Response> {
       return createErrorResponse('Blacklist driver not available', 'Blacklist driver does not support removing entries');
     }
 
-    const removed = await blacklistDriver.remove(config.key);
+    const removed = await blacklistDriver.remove(config.key!);
 
     // Emit SSE event for blacklist update (only if removal was successful)
     if (removed) {
@@ -269,12 +320,16 @@ async function removeBlacklistEntry(config: DriverConfig): Promise<Response> {
       removed,
       timestamp: new Date().toISOString()
     });
-  } catch (error) {
+  });
+
+  if (error) {
     return createErrorResponse(
       'Failed to remove blacklist entry',
-      error instanceof Error ? error.message : 'Unknown error'
+      error.message
     );
   }
+
+  return result;
 }
 
 async function updateBlacklistEntry(config: DriverConfig): Promise<Response> {
@@ -285,7 +340,7 @@ async function updateBlacklistEntry(config: DriverConfig): Promise<Response> {
     return createErrorResponse('Missing required field', 'key (domain) is required for UPDATE method', 400);
   }
 
-  try {
+  const [result, error] = await tryAsync(async () => {
     const drivers = getDrivers();
     const blacklistDriver = drivers.blacklist;
 
@@ -293,14 +348,14 @@ async function updateBlacklistEntry(config: DriverConfig): Promise<Response> {
       return createErrorResponse('Blacklist driver not available', 'Blacklist driver does not support updating entries');
     }
 
-    const exists = await blacklistDriver.contains(config.key);
+    const exists = await blacklistDriver.contains(config.key!);
     if (!exists) {
       return createErrorResponse('Entry not found', `Domain '${config.key}' is not in the blacklist`, 404);
     }
 
     // Remove and re-add with new values
-    await blacklistDriver.remove(config.key);
-    await blacklistDriver.add(config.key, config.reason, config.category);
+    await blacklistDriver.remove(config.key!);
+    await blacklistDriver.add(config.key!, config.reason, config.category);
 
     // Emit SSE event for blacklist update
     dnsEventService.refreshDriverContent(DRIVER_TYPES.BLACKLIST);
@@ -312,12 +367,16 @@ async function updateBlacklistEntry(config: DriverConfig): Promise<Response> {
       category: config.category,
       timestamp: new Date().toISOString()
     });
-  } catch (error) {
+  });
+
+  if (error) {
     return createErrorResponse(
       'Failed to update blacklist entry',
-      error instanceof Error ? error.message : 'Unknown error'
+      error.message
     );
   }
+
+  return result;
 }
 
 async function importBlacklistEntries(config: DriverConfig): Promise<Response> {
@@ -328,7 +387,7 @@ async function importBlacklistEntries(config: DriverConfig): Promise<Response> {
     return createErrorResponse('Missing required field', 'entries array is required for IMPORT method', 400);
   }
 
-  try {
+  const [result, error] = await tryAsync(async () => {
     const drivers = getDrivers();
     const blacklistDriver = drivers.blacklist;
 
@@ -336,10 +395,10 @@ async function importBlacklistEntries(config: DriverConfig): Promise<Response> {
       return createErrorResponse('Blacklist driver not available', 'Blacklist driver does not support importing entries');
     }
 
-    const entriesWithDefaults = config.entries.map(entry => ({
+    const entriesWithDefaults = config.entries!.map(entry => ({
       domain: entry.domain || entry.key || '',
       reason: entry.reason || 'Imported entry',
-      addedAt: new Date(),
+      addedAt: Date.now(),
       source: 'import' as const,
       category: entry.category || 'imported'
     }));
@@ -352,22 +411,26 @@ async function importBlacklistEntries(config: DriverConfig): Promise<Response> {
     return createSuccessResponse({
       message: `Successfully imported ${imported} blacklist entries`,
       imported,
-      total: config.entries.length,
+      total: config.entries!.length,
       timestamp: new Date().toISOString()
     });
-  } catch (error) {
+  });
+
+  if (error) {
     return createErrorResponse(
       'Failed to import blacklist entries',
-      error instanceof Error ? error.message : 'Unknown error'
+      error.message
     );
   }
+
+  return result;
 }
 
 async function exportBlacklistEntries(_config: DriverConfig): Promise<Response> {
   const serverError = checkServerAvailability();
   if (serverError) return serverError;
 
-  try {
+  const [result, error] = await tryAsync(async () => {
     const drivers = getDrivers();
     const blacklistDriver = drivers.blacklist;
 
@@ -383,12 +446,16 @@ async function exportBlacklistEntries(_config: DriverConfig): Promise<Response> 
       count: entries.length,
       timestamp: new Date().toISOString()
     });
-  } catch (error) {
+  });
+
+  if (error) {
     return createErrorResponse(
       'Failed to export blacklist entries',
-      error instanceof Error ? error.message : 'Unknown error'
+      error.message
     );
   }
+
+  return result;
 }
 
 export default {

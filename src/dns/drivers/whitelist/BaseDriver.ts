@@ -1,8 +1,8 @@
-export interface WhitelistEntry {
-  domain: string;
+import type { DnsWhitelistEntry } from '@src/types/dns-unified';
+
+// Re-export unified whitelist entry type with extended options
+export interface WhitelistEntry extends DnsWhitelistEntry {
   reason?: string;
-  addedAt: Date;
-  source: 'manual' | 'auto' | 'import';
   category?: string;
 }
 
@@ -21,6 +21,7 @@ export interface WhitelistStats {
 }
 
 export abstract class BaseDriver {
+  static readonly DRIVER_NAME: string = 'base';
   protected options: WhitelistOptions;
 
   constructor(options: WhitelistOptions = {}) {

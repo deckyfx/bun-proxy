@@ -1,21 +1,17 @@
 import { Button, Card, Select, Table, type TableColumn, FloatingLabelInput } from "@app/components/index";
 import { useState, useEffect } from "react";
-import { DRIVER_TYPES } from "@src/types/driver";
+import { DRIVER_TYPES, type DriversResponse } from "@src/types/driver";
+import type { BlacklistEntry as ServerBlacklistEntry } from "@src/dns/drivers/blacklist/BaseDriver";
 import { useDnsBlacklistStore } from "@app/stores/dnsBlacklistStore";
 import { useDialogStore } from "@app/stores/dialogStore";
+import { tryAsync } from '@src/utils/try';
 
 interface BlacklistDriverProps {
-  drivers: any;
+  drivers: DriversResponse | null;
   loading: boolean;
 }
 
-interface BlacklistEntry {
-  domain: string;
-  reason?: string;
-  category?: string;
-  addedAt?: string;
-  source?: string;
-}
+type BlacklistEntry = ServerBlacklistEntry;
 
 const formatDriverName = (name: string): string => {
   if (!name) return "Unknown";
@@ -32,31 +28,32 @@ const formatDriverName = (name: string): string => {
   );
 };
 
-const tableColumns: TableColumn<BlacklistEntry>[] = [
+const tableColumns: TableColumn<ServerBlacklistEntry>[] = [
   {
     key: "domain",
     label: "Domain",
     className: "font-mono",
-    render: (value: string) => (
-      <div className="max-w-48 truncate" title={value}>
-        {value}
+    render: (value) => (
+      <div className="max-w-48 truncate" title={String(value || '')}>
+        {String(value || '')}
       </div>
     ),
   },
   {
     key: "reason",
     label: "Reason",
-    render: (value: string | undefined) => (
-      <div className="max-w-32 truncate" title={value}>
-        {value || <span className="text-gray-400">No reason</span>}
+    render: (value) => (
+      <div className="max-w-32 truncate" title={String(value || '')}>
+        {String(value || '') || <span className="text-gray-400">No reason</span>}
       </div>
     ),
   },
   {
     key: "category",
     label: "Category",
-    render: (value: string | undefined) => {
-      if (!value) return <span className="text-gray-400">-</span>;
+    render: (value) => {
+      const stringValue = String(value || '');
+      if (!stringValue) return <span className="text-gray-400">-</span>;
       
       const categoryColors: Record<string, string> = {
         ads: "bg-red-100 text-red-800",
@@ -69,11 +66,11 @@ const tableColumns: TableColumn<BlacklistEntry>[] = [
         manual: "bg-green-100 text-green-800",
       };
       
-      const colorClass = categoryColors[value.toLowerCase()] || "bg-gray-100 text-gray-800";
+      const colorClass = categoryColors[stringValue.toLowerCase()] || "bg-gray-100 text-gray-800";
       
       return (
         <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${colorClass}`}>
-          {value}
+          {stringValue}
         </span>
       );
     },
@@ -81,8 +78,9 @@ const tableColumns: TableColumn<BlacklistEntry>[] = [
   {
     key: "source",
     label: "Source",
-    render: (value: string | undefined) => {
-      if (!value) return <span className="text-gray-400">-</span>;
+    render: (value) => {
+      const stringValue = String(value || '');
+      if (!stringValue) return <span className="text-gray-400">-</span>;
       
       const sourceIcons: Record<string, string> = {
         manual: "person",
@@ -91,12 +89,12 @@ const tableColumns: TableColumn<BlacklistEntry>[] = [
         api: "api",
       };
       
-      const icon = sourceIcons[value.toLowerCase()] || "help";
+      const icon = sourceIcons[stringValue.toLowerCase()] || "help";
       
       return (
         <div className="flex items-center gap-1">
           <span className="material-icons text-sm text-gray-500">{icon}</span>
-          <span className="text-sm capitalize">{value}</span>
+          <span className="text-sm capitalize">{stringValue}</span>
         </div>
       );
     },
@@ -104,8 +102,8 @@ const tableColumns: TableColumn<BlacklistEntry>[] = [
   {
     key: "addedAt",
     label: "Added",
-    render: (value: string | undefined) => {
-      if (!value) return <span className="text-gray-400">-</span>;
+    render: (value) => {
+      if (!value || typeof value !== 'number') return <span className="text-gray-400">-</span>;
       return (
         <span className="text-sm text-gray-600">
           {new Date(value).toLocaleString()}
@@ -133,9 +131,9 @@ export default function BlacklistDriver({ drivers, loading }: BlacklistDriverPro
   const { showConfirm, showCustom, closeDialog } = useDialogStore();
 
   useEffect(() => {
-    if (drivers?.current?.blacklist) {
+    if (drivers?.current?.[DRIVER_TYPES.BLACKLIST]) {
       setDriverForm({
-        driver: drivers.current.blacklist.implementation || 'inmemory'
+        driver: drivers.current[DRIVER_TYPES.BLACKLIST].implementation || 'inmemory'
       });
     }
   }, [drivers]);
@@ -226,20 +224,19 @@ export default function BlacklistDriver({ drivers, loading }: BlacklistDriverPro
         if (!formData.domain) return;
 
         setSubmitting(true);
-        try {
-          const success = await addEntry(
-            formData.domain, 
-            formData.reason || 'Manually added', 
-            formData.category || 'manual'
-          );
-          
-          if (success) {
-            await fetchBlacklistContent();
-            closeDialog(dialogId);
-          }
-        } finally {
-          setSubmitting(false);
+        
+        const [success, error] = await tryAsync(() => addEntry(
+          formData.domain, 
+          formData.reason || 'Manually added', 
+          formData.category || 'manual'
+        ));
+        
+        if (!error && success) {
+          await fetchBlacklistContent();
+          closeDialog(dialogId);
         }
+        
+        setSubmitting(false);
       };
 
       return (
@@ -452,7 +449,7 @@ export default function BlacklistDriver({ drivers, loading }: BlacklistDriverPro
               <span className="material-icons text-lg">block</span>
               <span className="font-medium">Blocked Domains</span>
               <span className="text-sm text-gray-500">
-                ({Array.isArray(content?.content) ? content.content.length : 0} domains)
+                ({content && 'entries' in content && Array.isArray(content.entries) ? content.entries.length : 0} domains)
               </span>
             </div>
           </div>
@@ -461,7 +458,7 @@ export default function BlacklistDriver({ drivers, loading }: BlacklistDriverPro
             columns={[...tableColumns, {
               key: "actions",
               label: "Actions",
-              render: (_value: any, entry: BlacklistEntry) => (
+              render: (_value, entry) => (
                 <button
                   onClick={() => handleRemoveEntry(entry.domain)}
                   className="inline-flex items-center gap-1 px-2 py-1 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
@@ -472,12 +469,12 @@ export default function BlacklistDriver({ drivers, loading }: BlacklistDriverPro
                 </button>
               ),
             }]}
-            data={Array.isArray(content?.content) ? content.content : []}
+            data={content && 'entries' in content && Array.isArray(content.entries) ? content.entries as ServerBlacklistEntry[] : []}
             loading={contentLoading}
             loadingMessage="Loading blacklist entries..."
             emptyMessage={
-              typeof content?.content === "string"
-                ? content.content
+              !content || !content.success
+                ? "Failed to load blacklist entries"
                 : currentDriver?.implementation === "inmemory"
                 ? "No domains in blacklist. Add domains manually or import from logs."
                 : "No blacklist entries available. Click Refresh to load entries from the current driver."

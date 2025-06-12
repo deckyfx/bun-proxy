@@ -7,17 +7,18 @@ import {
 import LogsStreamTab from "./LogsStreamTab";
 import LogsHistoryTab from "./LogsHistoryTab";
 import { useState, useEffect } from "react";
-import { DRIVER_TYPES } from "@src/types/driver";
-import type { LogEntry } from "@src/dns/drivers/logs/BaseDriver";
+import { DRIVER_TYPES, type DriversResponse, type DriverStatus, type DriverListResponse } from "@src/types/driver";
+import type { LogEntry, DecodedPacket, ServerEventLogEntry } from "@src/types/dns-unified";
 import { useDnsLogStore } from "@app/stores/dnsLogStore";
 import { useDialogStore } from "@app/stores/dialogStore";
 import { useDnsCacheStore } from "@app/stores/dnsCacheStore";
 import { useDnsBlacklistStore } from "@app/stores/dnsBlacklistStore";
 import { useDnsWhitelistStore } from "@app/stores/dnsWhitelistStore";
 import { sseClient } from "@src/utils/SSEClient";
+import { tryAsync, trySync } from '@src/utils/try';
 
 interface LogsDriverProps {
-  drivers: any;
+  drivers: DriversResponse | null;
   loading: boolean;
 }
 
@@ -41,14 +42,19 @@ const tableColumns: TableColumn<LogEntry>[] = [
   {
     key: "timestamp",
     label: "Time",
-    render: (value: Date) => value.toLocaleTimeString(),
+    render: (value) => {
+      if (typeof value === 'number') {
+        return new Date(value).toLocaleTimeString();
+      }
+      return String(value);
+    },
   },
   {
     key: "type",
     label: "Type",
-    render: (_value: string, log: LogEntry) => {
+    render: (_value, log) => {
       if (log.type === "server_event") {
-        const eventType = (log as any).eventType;
+        const eventType = 'eventType' in log ? (log as { eventType: string }).eventType : undefined;
         return (
           <span
             className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
@@ -84,30 +90,31 @@ const tableColumns: TableColumn<LogEntry>[] = [
     key: "domain",
     label: "Domain",
     className: "font-mono",
-    render: (_value: any, log: LogEntry) => {
+    render: (_value, log) => {
       if ("query" in log) {
         return (
           <>
-            {log.query.domain}
-            <div className="text-xs text-gray-500">{log.query.type}</div>
+            {log.query?.name}
+            <div className="text-xs text-gray-500">{log.query?.type}</div>
           </>
         );
       }
       if (log.type === "server_event") {
+        const serverLog = log as ServerEventLogEntry;
         return (
           <div className="font-medium">
-            {(log as any).message}
-            {(log as any).port && (
+            {serverLog.message}
+            {serverLog.port && (
               <div className="text-xs text-gray-500">
-                Port: {(log as any).port}
+                Port: {serverLog.port}
               </div>
             )}
-            {(log as any).error && (
+            {serverLog.error && (
               <div
                 className="text-xs text-red-600 mt-1"
-                title={(log as any).errorStack}
+                title={serverLog.errorStack}
               >
-                Error: {(log as any).error}
+                Error: {serverLog.error}
               </div>
             )}
           </div>
@@ -120,16 +127,17 @@ const tableColumns: TableColumn<LogEntry>[] = [
     key: "client",
     label: "Client",
     className: "font-mono",
-    render: (_value: any, log: LogEntry) => {
-      return "query" in log ? log.query.clientIP || "-" : "-";
+    render: (_value, log) => {
+      return "client" in log ? log.client.address || "-" : "-";
     },
   },
   {
     key: "status",
     label: "Status",
-    render: (_value: any, log: LogEntry) => {
+    render: (_value, log) => {
       if (log.type === "server_event") {
-        const eventType = (log as any).eventType;
+        const serverLog = log as ServerEventLogEntry;
+        const eventType = serverLog.eventType;
         return (
           <span
             className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
@@ -148,7 +156,7 @@ const tableColumns: TableColumn<LogEntry>[] = [
         ) : (
           <span
             className="text-red-600 font-medium"
-            title={"error" in log ? log.error : undefined}
+            title={"processing" in log ? log.processing.error : undefined}
           >
             Error
           </span>
@@ -161,16 +169,40 @@ const tableColumns: TableColumn<LogEntry>[] = [
     key: "resolvedAddresses",
     label: "Resolved IPs",
     className: "font-mono text-xs",
-    render: (_value: any, log: LogEntry) => {
+    render: (_value, log) => {
       if (log.type === "server_event") {
         return "-";
       }
 
-      // Check for resolved addresses in different possible locations
-      const addresses =
-        ("response" in log && log.response?.resolvedAddresses) ||
-        ("resolvedAddresses" in log && log.resolvedAddresses) ||
-        ("resolvedIPs" in log && log.resolvedIPs);
+      // Extract IP addresses from the DNS packet if available
+      let addresses: string[] = [];
+      if ("packet" in log && log.packet) {
+        // Use the extractIpAddresses utility from dns-bridge
+        const extractIpAddresses = (packet: DecodedPacket): string[] => {
+          const ips: string[] = [];
+          if (packet && packet.answers) {
+            const answers = packet.answers;
+            if (Array.isArray(answers)) {
+              for (const answer of answers) {
+                if (answer.type === 'A' || answer.type === 'AAAA') {
+                  const data = (answer as { data: string }).data;
+                  if (data) {
+                    ips.push(data);
+                  }
+                }
+              }
+            }
+          }
+          return ips;
+        };
+        
+        const [extractedAddresses, extractError] = trySync(() => 
+          log.packet ? extractIpAddresses(log.packet) : []
+        );
+        if (!extractError) {
+          addresses = extractedAddresses;
+        }
+      }
 
       if (addresses && Array.isArray(addresses) && addresses.length > 0) {
         return (
@@ -212,9 +244,9 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
   // History logs are now handled by the LogsHistoryTab component
 
   useEffect(() => {
-    if (drivers?.current?.logs) {
+    if (drivers?.current?.[DRIVER_TYPES.LOGS]) {
       setDriverForm({
-        driver: drivers.current.logs.implementation || "console",
+        driver: drivers.current[DRIVER_TYPES.LOGS].implementation || "console",
       });
     }
   }, [drivers]);
@@ -225,18 +257,14 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
     const logEventUnsubscriber = sseClient.subscribe(
       "dns/log/event",
       (logEntry) => {
-        if (logEntry) {
-          const newLogEntry = {
-            ...logEntry,
-            timestamp: new Date(logEntry.timestamp),
-          };
-
+        if (logEntry && 'type' in logEntry && (logEntry.type === 'request' || logEntry.type === 'response' || logEntry.type === 'server_event')) {
+          const typedLogEntry = logEntry as LogEntry;
           setLogs((prev) => {
             // Add new entry and keep last 100, sorted by timestamp (newest first)
-            const updated = [newLogEntry, ...prev]
+            const updated = [typedLogEntry, ...prev]
               .sort(
                 (a: LogEntry, b: LogEntry) =>
-                  b.timestamp.getTime() - a.timestamp.getTime()
+                  b.timestamp - a.timestamp
               )
               .slice(0, 100);
             return updated;
@@ -287,8 +315,8 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
 
   // Show response details in a custom dialog
   const showResponseDetails = (log: LogEntry) => {
-    const responseLog = log as any;
-    const domain = "query" in responseLog ? responseLog.query?.domain : "";
+    const responseLog = log.type === 'response' ? log : null;
+    const domain = responseLog && "query" in responseLog ? responseLog.query?.name : "";
 
     const content = (
       <div className="space-y-4">
@@ -307,7 +335,7 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
               Query Type
             </label>
             <div className="p-2 bg-gray-50 rounded text-sm">
-              {"query" in responseLog ? responseLog.query?.type : "N/A"}
+              {responseLog && "query" in responseLog ? responseLog.query?.type : "N/A"}
             </div>
           </div>
           <div>
@@ -315,7 +343,7 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
               Client IP
             </label>
             <div className="p-2 bg-gray-50 rounded text-sm font-mono">
-              {"query" in responseLog ? responseLog.query?.clientIP : "N/A"}
+              {responseLog && "client" in responseLog ? responseLog.client?.address : "N/A"}
             </div>
           </div>
           <div>
@@ -323,7 +351,7 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
               Provider
             </label>
             <div className="p-2 bg-gray-50 rounded text-sm">
-              {"provider" in responseLog ? responseLog.provider : "N/A"}
+              {responseLog && "processing" in responseLog ? responseLog.processing?.provider || "N/A" : "N/A"}
             </div>
           </div>
         </div>
@@ -334,7 +362,7 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
             Response Status
           </label>
           <div className="flex items-center gap-4 flex-wrap">
-            {"success" in responseLog && responseLog.success ? (
+            {responseLog && "success" in responseLog && responseLog.success ? (
               <span className="inline-flex px-3 py-1 text-sm font-medium bg-green-100 text-green-800 rounded-full">
                 Success
               </span>
@@ -343,22 +371,11 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
                 Failed
               </span>
             )}
-            {"responseTime" in responseLog && (
+            {responseLog && "processing" in responseLog && responseLog.processing?.responseTime && (
               <span className="text-sm text-gray-600">
-                Response Time: {responseLog.responseTime}ms
+                Response Time: {responseLog.processing.responseTime}ms
               </span>
             )}
-            {"attempt" in responseLog && responseLog.attempt && (
-              <span className="text-sm text-gray-600">
-                Attempt: {responseLog.attempt}
-              </span>
-            )}
-            {"response" in responseLog &&
-              responseLog.response?.responseSize && (
-                <span className="text-sm text-gray-600">
-                  Size: {responseLog.response.responseSize} bytes
-                </span>
-              )}
           </div>
         </div>
 
@@ -368,37 +385,37 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
             Flags
           </label>
           <div className="flex gap-2">
-            {"cached" in responseLog && responseLog.cached && (
+            {responseLog && "processing" in responseLog && responseLog.processing?.cached && (
               <span className="inline-flex px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded">
                 Cached
               </span>
             )}
-            {"blocked" in responseLog && responseLog.blocked && (
+            {responseLog && "processing" in responseLog && responseLog.processing?.blocked && (
               <span className="inline-flex px-2 py-1 text-xs bg-red-100 text-red-800 rounded">
                 Blocked
               </span>
             )}
-            {"whitelisted" in responseLog && responseLog.whitelisted && (
+            {responseLog && "processing" in responseLog && responseLog.processing?.whitelisted && (
               <span className="inline-flex px-2 py-1 text-xs bg-green-100 text-green-800 rounded">
                 Whitelisted
               </span>
             )}
-            {!("cached" in responseLog && responseLog.cached) &&
-              !("blocked" in responseLog && responseLog.blocked) &&
-              !("whitelisted" in responseLog && responseLog.whitelisted) && (
+            {!(responseLog && "processing" in responseLog && responseLog.processing?.cached) &&
+              !(responseLog && "processing" in responseLog && responseLog.processing?.blocked) &&
+              !(responseLog && "processing" in responseLog && responseLog.processing?.whitelisted) && (
                 <span className="text-sm text-gray-500">No flags</span>
               )}
           </div>
         </div>
 
         {/* Error Details */}
-        {"error" in responseLog && responseLog.error && (
+        {responseLog && "processing" in responseLog && responseLog.processing?.error && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Error
             </label>
             <div className="p-3 bg-red-50 border border-red-200 rounded text-sm text-red-800">
-              {responseLog.error}
+              {responseLog.processing.error}
             </div>
           </div>
         )}
@@ -410,12 +427,33 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
           </label>
           {(() => {
             // Check for resolved addresses in different possible locations
-            const addresses =
-              ("response" in responseLog &&
-                responseLog.response?.resolvedAddresses) ||
-              ("resolvedAddresses" in responseLog &&
-                responseLog.resolvedAddresses) ||
-              ("resolvedIPs" in responseLog && responseLog.resolvedIPs);
+            let addresses: string[] | undefined;
+            if (responseLog && "packet" in responseLog && responseLog.packet) {
+              const extractIpAddresses = (packet: DecodedPacket): string[] => {
+                const ips: string[] = [];
+                if (packet && packet.answers) {
+                  const answers = packet.answers;
+                  if (Array.isArray(answers)) {
+                    for (const answer of answers) {
+                      if (answer.type === 'A' || answer.type === 'AAAA') {
+                        const data = (answer as { data: string }).data;
+                        if (data) {
+                          ips.push(data);
+                        }
+                      }
+                    }
+                  }
+                }
+                return ips;
+              };
+              
+              const [extractedAddresses, extractError] = trySync(() => 
+                responseLog.packet ? extractIpAddresses(responseLog.packet) : []
+              );
+              if (!extractError) {
+                addresses = extractedAddresses;
+              }
+            }
 
             if (addresses && Array.isArray(addresses) && addresses.length > 0) {
               return (
@@ -446,7 +484,7 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
             Timestamp
           </label>
           <div className="p-2 bg-gray-50 rounded text-sm">
-            {responseLog.timestamp.toLocaleString()}
+            {responseLog ? new Date(responseLog.timestamp).toLocaleString() : new Date().toLocaleString()}
           </div>
         </div>
 
@@ -499,6 +537,7 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
 
   // Handler to add domain to cache
   const handleAddToCache = async (domain: string) => {
+    // Create a simple cache entry for manual addition
     const cacheValue = {
       cached: true,
       addedFrom: 'logs',
@@ -546,26 +585,26 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
 
   // Fetch log history using the driver store
   const fetchLogHistory = async (customFilters?: typeof filters) => {
-    try {
-      const currentFilters = customFilters || filters;
-      const filterConfig = {
-        ...(currentFilters.type && { type: currentFilters.type }),
-        ...(currentFilters.level && { level: currentFilters.level }),
-        ...(currentFilters.domain && { domain: currentFilters.domain }),
-        ...(currentFilters.provider && { provider: currentFilters.provider }),
-        ...(currentFilters.success && { success: currentFilters.success === "true" }),
-        limit: currentFilters.limit,
-      };
+    const currentFilters = customFilters || filters;
+    const filterConfig = {
+      ...(currentFilters.type && { type: currentFilters.type }),
+      ...(currentFilters.level && { level: currentFilters.level }),
+      ...(currentFilters.domain && { domain: currentFilters.domain }),
+      ...(currentFilters.provider && { provider: currentFilters.provider }),
+      ...(currentFilters.success && { success: currentFilters.success === "true" }),
+      limit: currentFilters.limit,
+    };
 
-      await getContent(filterConfig);
-    } catch (error) {
+    const [, error] = await tryAsync(() => getContent(filterConfig));
+    
+    if (error) {
       // Error handling is now done in the store, but add safety net
       console.error("Error in fetchLogHistory:", error);
     }
   };
 
-  const availableDrivers = drivers?.available[DRIVER_TYPES.LOGS] || [];
-  const currentDriver = drivers?.current[DRIVER_TYPES.LOGS];
+  const availableDrivers = drivers?.available?.[DRIVER_TYPES.LOGS] || [];
+  const currentDriver = drivers?.current?.[DRIVER_TYPES.LOGS];
 
   return (
     <div className="space-y-4">
@@ -642,13 +681,15 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
               icon: 'history',
               content: (
                 <LogsHistoryTab
-                  content={(content as unknown) as LogEntry[]}
+                  content={content && 'entries' in content && Array.isArray(content.entries) ? content.entries as LogEntry[] : null}
                   loading={historyLoading}
                   error={error ?? null}
-                  currentDriver={currentDriver}
+                  currentDriver={currentDriver ? { implementation: currentDriver.implementation, status: currentDriver.status } : null}
                   tableColumns={tableColumns}
                   filters={filters}
-                  onFiltersChange={setFilters}
+                  onFiltersChange={(newFilters) => {
+                    setFilters(prev => ({ ...prev, ...newFilters }));
+                  }}
                   onClearFilters={clearFilters}
                   onFetchHistory={fetchLogHistory}
                   onRowClick={handleRowClick}

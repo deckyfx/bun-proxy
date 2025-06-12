@@ -1,5 +1,6 @@
 import { User } from "@src/models/User";
 import { Auth, type AuthUser } from "@utils/auth";
+import { tryAsync } from "@src/utils/try";
 
 interface UpdateUserRequest {
   id: number;
@@ -10,7 +11,7 @@ interface UpdateUserRequest {
 }
 
 export async function UpdateUser(req: Request, _user: AuthUser): Promise<Response> {
-  try {
+  const [result, error] = await tryAsync(async () => {
     const body: UpdateUserRequest = await req.json();
     
     // Validate required fields
@@ -82,16 +83,20 @@ export async function UpdateUser(req: Request, _user: AuthUser): Promise<Respons
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
-  } catch (error) {
+  });
+
+  if (error) {
     console.error("Failed to update user:", error);
     return new Response(JSON.stringify({ 
       error: "Failed to update user",
-      details: error instanceof Error ? error.message : String(error)
+      details: error.message
     }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
     });
   }
+
+  return result;
 }
 
 export default {

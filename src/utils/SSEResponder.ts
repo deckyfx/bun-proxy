@@ -1,3 +1,7 @@
+import type { DnsLogEntry } from '@src/types/dns-unified';
+import type { DNSStatusMessage, DNSContentMessage, SystemHeartbeatMessage, ErrorMessage } from './SSEClient';
+import { trySync } from './try';
+
 interface SSEClient {
   id: string;
   response: Response;
@@ -47,9 +51,8 @@ export class SSEResponder {
   removeClient(clientId: string): void {
     const client = this.clients.get(clientId);
     if (client) {
-      try {
-        client.controller.close();
-      } catch (error) {
+      const [, error] = trySync(() => client.controller.close());
+      if (error) {
         // Client may already be disconnected
       }
       this.clients.delete(clientId);
@@ -76,7 +79,7 @@ export class SSEResponder {
   }
 
   // Emit event to a specific channel
-  emit(channel: string, data: any): void {
+  emit(channel: string, data: DNSStatusMessage | DNSContentMessage | DnsLogEntry | SystemHeartbeatMessage | ErrorMessage | object): void {
     const message = {
       type: channel,
       data,
@@ -96,24 +99,27 @@ export class SSEResponder {
   }
 
   // Send message to specific client
-  private sendToClient(clientId: string, message: any): boolean {
+  private sendToClient(clientId: string, message: object): boolean {
     const client = this.clients.get(clientId);
     if (!client) {
       return false;
     }
 
-    try {
+    const [, error] = trySync(() => {
       const data = `data: ${JSON.stringify(message)}\n\n`;
       const encoder = new TextEncoder();
       client.controller.enqueue(encoder.encode(data));
       client.lastPing = Date.now();
-      return true;
-    } catch (error) {
+    });
+    
+    if (error) {
       console.error(`Failed to send message to client ${clientId}:`, error);
       // Remove disconnected client
       this.removeClient(clientId);
       return false;
     }
+    
+    return true;
   }
 
   // Start keep-alive mechanism
@@ -178,13 +184,14 @@ export class SSEResponder {
 
     // Close all client connections
     for (const [clientId, client] of this.clients) {
-      try {
+      const [, error] = trySync(() => {
         this.sendToClient(clientId, {
           type: 'shutdown',
           data: { message: 'Server shutting down' }
         });
         client.controller.close();
-      } catch (error) {
+      });
+      if (error) {
         // Ignore errors during cleanup
       }
     }
@@ -194,31 +201,31 @@ export class SSEResponder {
   }
 
   // Convenience methods for new channel structure
-  emitDNSInfo(infoData: any): void {
+  emitDNSInfo(infoData: object): void {
     this.emit('dns/info', infoData);
   }
 
-  emitDNSStatus(statusData: any): void {
+  emitDNSStatus(statusData: DNSStatusMessage): void {
     this.emit('dns/status', statusData);
   }
 
-  emitDNSLogEvent(logEntry: any): void {
+  emitDNSLogEvent(logEntry: DnsLogEntry): void {
     this.emit('dns/log/event', logEntry);
   }
 
-  emitDNSLogContent(logData: any): void {
+  emitDNSLogContent(logData: DNSContentMessage): void {
     this.emit('dns/log/', logData);
   }
 
-  emitDNSCacheContent(cacheData: any): void {
+  emitDNSCacheContent(cacheData: DNSContentMessage): void {
     this.emit('dns/cache/', cacheData);
   }
 
-  emitDNSBlacklistContent(blacklistData: any): void {
+  emitDNSBlacklistContent(blacklistData: DNSContentMessage): void {
     this.emit('dns/blacklist/', blacklistData);
   }
 
-  emitDNSWhitelistContent(whitelistData: any): void {
+  emitDNSWhitelistContent(whitelistData: DNSContentMessage): void {
     this.emit('dns/whitelist/', whitelistData);
   }
 
@@ -226,7 +233,7 @@ export class SSEResponder {
     this.emit('system/heartbeat', { ping: 'pong', timestamp: Date.now() });
   }
 
-  emitError(errorData: any): void {
+  emitError(errorData: ErrorMessage): void {
     this.emit('error', errorData);
   }
 }

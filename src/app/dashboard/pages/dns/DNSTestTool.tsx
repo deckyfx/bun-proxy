@@ -1,38 +1,39 @@
-import { Button, Card, FloatingLabelInput, Select } from "@app/components/index";
+import {
+  Button,
+  Card,
+  FloatingLabelInput,
+  Select,
+} from "@app/components/index";
 import { useState } from "react";
 import { useDNSStore } from "@app/stores/dnsStore";
 import { useDNSTestStore } from "@app/stores/dnsTestStore";
 
 export default function DNSTestTool() {
   const { config: dnsConfig } = useDNSStore();
-  const {
-    results,
-    isRunning,
-    testUDP,
-    testDoH,
-    runAllTests,
-    clearResults
-  } = useDNSTestStore();
-  
+  const { results, isRunning, testUDP, testDoH, runAllTests, clearResults } =
+    useDNSTestStore();
+
   const [testDomain, setTestDomain] = useState("google.com");
-  const [testMethod, setTestMethod] = useState<'UDP' | 'DoH-GET' | 'DoH-POST' | 'ALL'>('ALL');
+  const [testMethod, setTestMethod] = useState<
+    "UDP" | "DoH-GET" | "DoH-POST" | "ALL"
+  >("ALL");
 
   const runTests = async () => {
     if (!testDomain.trim()) return;
-    
-    if (testMethod === 'ALL') {
+
+    if (testMethod === "ALL") {
       await runAllTests(testDomain);
-    } else if (testMethod === 'UDP') {
+    } else if (testMethod === "UDP") {
       await testUDP(testDomain, dnsConfig.port || 53);
-    } else if (testMethod === 'DoH-GET') {
-      await testDoH(testDomain, 'GET');
-    } else if (testMethod === 'DoH-POST') {
-      await testDoH(testDomain, 'POST');
+    } else if (testMethod === "DoH-GET") {
+      await testDoH(testDomain, "GET");
+    } else if (testMethod === "DoH-POST") {
+      await testDoH(testDomain, "POST");
     }
   };
 
   const formatDuration = (duration?: number) => {
-    if (!duration) return '-';
+    if (!duration) return "-";
     return `${duration}ms`;
   };
 
@@ -51,19 +52,21 @@ export default function DNSTestTool() {
             onChange={(e) => setTestDomain(e.target.value)}
             placeholder="example.com"
           />
-          
+
           <Select
             label="Test Method"
             value={testMethod}
-            onChange={(value) => setTestMethod(value as any)}
+            onChange={(value) =>
+              setTestMethod(value as "ALL" | "UDP" | "DoH-GET" | "DoH-POST")
+            }
             options={[
-              { value: 'ALL', label: 'All Methods' },
-              { value: 'UDP', label: 'UDP Query' },
-              { value: 'DoH-GET', label: 'DoH GET' },
-              { value: 'DoH-POST', label: 'DoH POST' }
+              { value: "ALL", label: "All Methods" },
+              { value: "UDP", label: "UDP Query" },
+              { value: "DoH-GET", label: "DoH GET" },
+              { value: "DoH-POST", label: "DoH POST" },
             ]}
           />
-          
+
           <div className="flex gap-2">
             <Button
               variant="primary"
@@ -75,11 +78,7 @@ export default function DNSTestTool() {
             >
               Run Test
             </Button>
-            <Button
-              variant="secondary"
-              onClick={clearResults}
-              icon="clear"
-            >
+            <Button variant="secondary" onClick={clearResults} icon="clear">
               Clear
             </Button>
           </div>
@@ -87,17 +86,19 @@ export default function DNSTestTool() {
 
         {/* Quick Test Buttons */}
         <div className="flex gap-2 flex-wrap">
-          {['google.com', 'example.com', 'github.com', 'cloudflare.com'].map(domain => (
-            <Button
-              key={domain}
-              variant="secondary"
-              size="sm"
-              onClick={() => setTestDomain(domain)}
-              className="text-xs"
-            >
-              {domain}
-            </Button>
-          ))}
+          {["google.com", "example.com", "github.com", "cloudflare.com"].map(
+            (domain) => (
+              <Button
+                key={domain}
+                variant="secondary"
+                size="sm"
+                onClick={() => setTestDomain(domain)}
+                className="text-xs"
+              >
+                {domain}
+              </Button>
+            )
+          )}
         </div>
 
         {/* Results Table */}
@@ -118,42 +119,52 @@ export default function DNSTestTool() {
                   </tr>
                 </thead>
                 <tbody>
-                  {results.map(result => (
+                  {results.map((result) => (
                     <tr key={result.id} className="border-b hover:bg-gray-50">
                       <td className="p-2 text-xs text-gray-500">
                         {formatTimestamp(result.timestamp)}
                       </td>
                       <td className="p-2 font-mono text-xs">{result.domain}</td>
                       <td className="p-2">
-                        <span className={`inline-flex px-2 py-1 rounded text-xs font-medium ${
-                          result.method === 'UDP' 
-                            ? 'bg-blue-100 text-blue-800'
-                            : result.method === 'DoH-GET'
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-purple-100 text-purple-800'
-                        }`}>
+                        <span
+                          className={`inline-flex px-2 py-1 rounded text-xs font-medium ${
+                            result.method === "UDP"
+                              ? "bg-blue-100 text-blue-800"
+                              : result.method === "DoH-GET"
+                              ? "bg-green-100 text-green-800"
+                              : "bg-purple-100 text-purple-800"
+                          }`}
+                        >
                           {result.method}
                         </span>
                       </td>
                       <td className="p-2">
-                        <span className={`inline-flex px-2 py-1 rounded text-xs font-medium ${
-                          result.status === 'success' 
-                            ? 'bg-green-100 text-green-800'
-                            : result.status === 'error'
-                            ? 'bg-red-100 text-red-800'
-                            : 'bg-yellow-100 text-yellow-800'
-                        }`}>
-                          {result.status === 'pending' ? '...' : result.status}
+                        <span
+                          className={`inline-flex px-2 py-1 rounded text-xs font-medium ${
+                            result.status === "success"
+                              ? "bg-green-100 text-green-800"
+                              : result.status === "error"
+                              ? "bg-red-100 text-red-800"
+                              : "bg-yellow-100 text-yellow-800"
+                          }`}
+                        >
+                          {result.status === "pending" ? "..." : result.status}
                         </span>
                       </td>
                       <td className="p-2 font-mono text-xs">
                         {formatDuration(result.duration)}
                       </td>
                       <td className="p-2 font-mono text-xs">
-                        {result.ips ? result.ips.join(', ') : result.error ? '-' : '...'}
+                        {result.ips
+                          ? result.ips.join(", ")
+                          : result.error
+                          ? "-"
+                          : "..."}
                       </td>
                       <td className="p-2 text-xs text-gray-600">
-                        {result.error || result.details || (result.status === 'pending' ? '...' : '')}
+                        {result.error ||
+                          result.details ||
+                          (result.status === "pending" ? "..." : "")}
                       </td>
                     </tr>
                   ))}

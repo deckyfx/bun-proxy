@@ -1,4 +1,5 @@
 import ScopedRoutes from "./routes";
+import { tryAsync } from "@src/utils/try";
 
 async function ApiHandler(
   req: Bun.BunRequest<"/api/:scope/:command">
@@ -18,12 +19,14 @@ async function ApiHandler(
     });
   }
 
-  try {
-    return await route[method]!(req);
-  } catch (error) {
+  const [result, error] = await tryAsync(() => route[method]!(req));
+
+  if (error) {
     console.error(`API ${method} Error:`, error);
     return new Response("Internal Server Error", { status: 500 });
   }
+
+  return result;
 }
 
 const ApiRoute = {

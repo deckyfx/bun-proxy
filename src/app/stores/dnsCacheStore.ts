@@ -1,12 +1,14 @@
 import { create } from 'zustand';
-import { DRIVER_METHODS, type DriverConfig, type DriverContentResponse } from '@src/types/driver';
+import { DRIVER_METHODS, type DriverConfig, type DriverContentResponse, type DriverStatus } from '@src/types/driver';
 import { useSnackbarStore } from './snackbarStore';
-import { sseClient } from '@src/utils/SSEClient';
+import { sseClient, type DNSContentMessage } from '@src/utils/SSEClient';
 import { api } from '@app/utils/fetchUtils';
+import { tryAsync } from '@src/utils/try';
+import type { CachedDnsResponse, DecodedPacket } from '@src/types/dns-unified';
 
 interface DnsCacheStore {
   // State
-  driverInfo: { current: any; available: string[] } | null;
+  driverInfo: { current: DriverStatus; available: string[] } | null;
   content: DriverContentResponse | null;
   loading: boolean;
   contentLoading: boolean;
@@ -15,10 +17,10 @@ interface DnsCacheStore {
   
   // Actions
   fetchDriverInfo: () => Promise<void>;
-  getContent: (filter?: Record<string, any>) => Promise<void>;
-  setDriver: (driver: string, options?: Record<string, any>) => Promise<void>;
+  getContent: (filter?: Record<string, unknown>) => Promise<void>;
+  setDriver: (driver: string, options?: Record<string, unknown>) => Promise<void>;
   clearContent: () => Promise<void>;
-  addEntry: (key: string, value: any, ttl?: number) => Promise<boolean>;
+  addEntry: (key: string, value: DecodedPacket | CachedDnsResponse | Record<string, unknown>, ttl?: number) => Promise<boolean>;
   removeEntry: (key: string) => Promise<boolean>;
   clearError: () => void;
   connectSSE: () => void;
@@ -41,144 +43,153 @@ export const useDnsCacheStore = create<DnsCacheStore>((set, get) => ({
   fetchDriverInfo: async () => {
     set({ loading: true, error: null });
     
-    try {
-      const data = await api.get('/api/dns/cache');
-      set({ driverInfo: data });
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch cache driver info';
+    const [data, error] = await tryAsync(() => api.get('/api/dns/cache'));
+    
+    if (error) {
+      const errorMessage = error.message || 'Failed to fetch cache driver info';
       set({ error: errorMessage });
       console.error('Failed to fetch cache driver info:', error);
-    } finally {
-      set({ loading: false });
+    } else {
+      set({ driverInfo: data });
     }
+    
+    set({ loading: false });
   },
 
-  getContent: async (filter?: Record<string, any>) => {
+  getContent: async (filter?: Record<string, unknown>) => {
     set({ contentLoading: true, error: null });
     
-    try {
-      const config: Partial<DriverConfig> = {
-        method: DRIVER_METHODS.GET,
-        filter
-      };
+    const config: Partial<DriverConfig> = {
+      method: DRIVER_METHODS.GET,
+      filter
+    };
 
-      const data: DriverContentResponse = await api.post('/api/dns/cache', config);
-      set({ content: data });
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to get cache content';
+    const [data, error] = await tryAsync(() => api.post('/api/dns/cache', config));
+    
+    if (error) {
+      const errorMessage = error.message || 'Failed to get cache content';
       set({ error: errorMessage });
       console.error('Failed to get cache content:', error);
-    } finally {
-      set({ contentLoading: false });
+    } else {
+      set({ content: data as DriverContentResponse });
     }
+    
+    set({ contentLoading: false });
   },
 
-  setDriver: async (driver: string, options?: Record<string, any>) => {
+  setDriver: async (driver: string, options?: Record<string, unknown>) => {
     set({ loading: true, error: null });
     
-    try {
-      const config: Partial<DriverConfig> = {
-        method: DRIVER_METHODS.SET,
-        driver,
-        options
-      };
+    const config: Partial<DriverConfig> = {
+      method: DRIVER_METHODS.SET,
+      driver,
+      options
+    };
 
-      await api.post('/api/dns/cache', config, {
-        showSuccess: true,
-        successMessage: 'Cache driver updated successfully'
-      });
-      
-      // Refresh driver info after successful change
-      await get().fetchDriverInfo();
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to set cache driver';
+    const [, error] = await tryAsync(() => api.post('/api/dns/cache', config, {
+      showSuccess: true,
+      successMessage: 'Cache driver updated successfully'
+    }));
+    
+    if (error) {
+      const errorMessage = error.message || 'Failed to set cache driver';
       set({ error: errorMessage });
       console.error('Failed to set cache driver:', error);
-    } finally {
-      set({ loading: false });
+    } else {
+      // Refresh driver info after successful change
+      await get().fetchDriverInfo();
     }
+    
+    set({ loading: false });
   },
 
   clearContent: async () => {
     set({ loading: true, error: null });
     
-    try {
-      const config: Partial<DriverConfig> = {
-        method: DRIVER_METHODS.CLEAR
-      };
+    const config: Partial<DriverConfig> = {
+      method: DRIVER_METHODS.CLEAR
+    };
 
-      await api.post('/api/dns/cache', config, {
-        showSuccess: true,
-        successMessage: 'Cache cleared successfully'
-      });
-      
-      // Clear the content in the store after successful API call
-      set({ content: null });
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to clear cache';
+    const [, error] = await tryAsync(() => api.post('/api/dns/cache', config, {
+      showSuccess: true,
+      successMessage: 'Cache cleared successfully'
+    }));
+    
+    if (error) {
+      const errorMessage = error.message || 'Failed to clear cache';
       set({ error: errorMessage });
       console.error('Failed to clear cache:', error);
-    } finally {
-      set({ loading: false });
+    } else {
+      // Clear the content in the store after successful API call
+      set({ content: null });
     }
+    
+    set({ loading: false });
   },
 
-  addEntry: async (key: string, value: any, ttl?: number) => {
-    try {
-      // First check if entry already exists
-      const checkConfig: Partial<DriverConfig> = {
-        method: DRIVER_METHODS.GET,
-        key
-      };
+  addEntry: async (key: string, value: DecodedPacket | CachedDnsResponse | Record<string, unknown>, ttl?: number) => {
+    // First check if entry already exists
+    const checkConfig: Partial<DriverConfig> = {
+      method: DRIVER_METHODS.GET,
+      key
+    };
 
-      const checkResult = await api.post('/api/dns/cache', checkConfig);
-      if (checkResult.content !== null) {
-        useSnackbarStore.getState().showAlert(`Cache entry "${key}" already exists`, "Duplicate Entry");
-        return false;
-      }
-
-      // Add the entry
-      const addConfig: Partial<DriverConfig> = {
-        method: DRIVER_METHODS.ADD,
-        key,
-        value,
-        ttl
-      };
-
-      await api.post('/api/dns/cache', addConfig, {
-        showSuccess: true,
-        successMessage: `Added "${key}" to cache`
-      });
-      
-      // Immediately refresh content to ensure UI updates
-      await get().getContent();
-      
-      return true;
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to add cache entry';
+    const [checkResult, checkError] = await tryAsync(() => api.post('/api/dns/cache', checkConfig));
+    
+    if (checkError) {
+      const errorMessage = checkError.message || 'Failed to add cache entry';
       useSnackbarStore.getState().showAlert(errorMessage, "Cache Error");
       return false;
     }
+    
+    if ('exists' in checkResult && checkResult.exists === true) {
+      useSnackbarStore.getState().showAlert(`Cache entry "${key}" already exists`, "Duplicate Entry");
+      return false;
+    }
+
+    // Add the entry
+    const addConfig: Partial<DriverConfig> = {
+      method: DRIVER_METHODS.ADD,
+      key,
+      value,
+      ttl
+    };
+
+    const [, addError] = await tryAsync(() => api.post('/api/dns/cache', addConfig, {
+      showSuccess: true,
+      successMessage: `Added "${key}" to cache`
+    }));
+    
+    if (addError) {
+      const errorMessage = addError.message || 'Failed to add cache entry';
+      useSnackbarStore.getState().showAlert(errorMessage, "Cache Error");
+      return false;
+    }
+    
+    // Immediately refresh content to ensure UI updates
+    await get().getContent();
+    
+    return true;
   },
 
   removeEntry: async (key: string) => {
-    try {
-      const config: Partial<DriverConfig> = {
-        method: DRIVER_METHODS.REMOVE,
-        key
-      };
+    const config: Partial<DriverConfig> = {
+      method: DRIVER_METHODS.REMOVE,
+      key
+    };
 
-      await api.post('/api/dns/cache', config, {
-        showSuccess: true,
-        successMessage: `Removed "${key}" from cache`
-      });
-      
-      return true;
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to remove cache entry';
+    const [, error] = await tryAsync(() => api.post('/api/dns/cache', config, {
+      showSuccess: true,
+      successMessage: `Removed "${key}" from cache`
+    }));
+    
+    if (error) {
+      const errorMessage = error.message || 'Failed to remove cache entry';
       useSnackbarStore.getState().showAlert(errorMessage, "Cache Error");
       return false;
     }
+    
+    return true;
   },
 
   clearError: () => {
@@ -191,8 +202,20 @@ export const useDnsCacheStore = create<DnsCacheStore>((set, get) => ({
 
     // Subscribe to cache content updates
     const contentUnsubscriber = sseClient.subscribe('dns/cache/', (cacheData) => {
-      if (cacheData) {
-        set({ content: cacheData });
+      if (cacheData && 'driver' in cacheData) {
+        const contentMessage = cacheData as DNSContentMessage;
+        const content: DriverContentResponse = {
+          success: true,
+          scope: 'cache',
+          driver: contentMessage.driver,
+          entries: contentMessage.entries || [],
+          timestamp: contentMessage.lastUpdated,
+          metadata: {
+            total: contentMessage.count,
+            timestamp: new Date(contentMessage.lastUpdated).toISOString()
+          }
+        };
+        set({ content });
       }
     });
 

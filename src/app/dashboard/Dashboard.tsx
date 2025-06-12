@@ -3,29 +3,32 @@ import type { UserType } from "@db/schema";
 import { useAuthStore } from "@app_stores/authStore";
 import { Button } from "@app_components/index";
 import { DashboardLayout } from "./layout";
+import { tryAsync } from '@src/utils/try';
 
 export default function Dashboard() {
-  const [healthResult, setHealthResult] = useState<any>(null);
+  const [healthResult, setHealthResult] = useState<unknown>(null);
   const [userResult, setUserResult] = useState<UserType | null>(null);
   const [loading, setLoading] = useState<{ [key: string]: boolean }>({});
 
   const { me, health, user, isLoading } = useAuthStore();
 
   const handleApiCall = async (
-    apiCall: () => Promise<any>,
-    resultSetter: (result: any) => void,
+    apiCall: () => Promise<unknown>,
+    resultSetter: (result: unknown) => void,
     key: string
   ) => {
     setLoading((prev) => ({ ...prev, [key]: true }));
-    try {
-      const result = await apiCall();
-      resultSetter(result);
-    } catch (error: any) {
+    
+    const [result, error] = await tryAsync(apiCall);
+    
+    if (error) {
       console.error(`${key} error:`, error);
       alert(`${key} failed: ${error.message}`);
-    } finally {
-      setLoading((prev) => ({ ...prev, [key]: false }));
+    } else {
+      resultSetter(result);
     }
+    
+    setLoading((prev) => ({ ...prev, [key]: false }));
   };
 
 
@@ -35,7 +38,7 @@ export default function Dashboard() {
         await me();
         return user;
       },
-      setUserResult,
+      (result) => setUserResult(result as UserType | null),
       "me"
     );
   };

@@ -2,15 +2,14 @@ import { renderToReadableStream } from "react-dom/server";
 import React from "react";
 
 import Index from "@app/index";
-import { getAccessTokenFromRequest, verifyAccessToken } from "@utils/auth";
-import { type UserType } from "@db/schema";
+import { Auth } from "@utils/auth";
 import Config from "@src/config";
 
 import { handleDoHRequest } from "../doh/handler";
 
 async function IndexSSR(req: Bun.BunRequest<"/">): Promise<Response> {
-  const token = getAccessTokenFromRequest(req);
-  const user = token ? verifyAccessToken<UserType>(token) : null;
+  const token = Auth.getAccessTokenFromRequest(req);
+  const user = token ? Auth.verifyAccessToken(token) : null;
   const isAuthenticated = !!user || Config.DEBUG_BYPASS_AUTH;
 
   const stream = await renderToReadableStream(

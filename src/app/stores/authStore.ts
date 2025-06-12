@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { api } from '@app/utils/fetchUtils';
+import { tryAsync } from '@src/utils/try';
 import type { 
   AuthResponse, 
   LoginRequest, 
@@ -49,55 +50,60 @@ export const useAuthStore = create<AuthState>()(
 
 
       me: async (): Promise<void> => {
-        try {
-          set({ isLoading: true });
-          const user: UserProfile = await api.post("/api/user/me", undefined, { showErrors: false });
-          set({ user });
-        } catch (err: any) {
+        set({ isLoading: true });
+        const [user, error] = await tryAsync<UserProfile>(() => 
+          api.post("/api/user/me", undefined, { showErrors: false })
+        );
+        
+        if (error) {
           get().clearTokens();
           window.location.reload();
-        } finally {
-          set({ isLoading: false });
+        } else {
+          set({ user });
         }
+        
+        set({ isLoading: false });
       },
 
       signin: async (payload: LoginRequest): Promise<boolean> => {
-        try {
-          set({ isLoading: true });
-          const tokens: AuthResponse = await api.post("/api/auth/signin", payload, { 
-            showErrors: false 
-          });
-          get().setTokens(tokens);
-          window.location.reload();
-          return true;
-        } catch (err: any) {
-          throw new Error(err.message || "Login failed");
-        } finally {
-          set({ isLoading: false });
+        set({ isLoading: true });
+        const [tokens, error] = await tryAsync<AuthResponse>(() => 
+          api.post("/api/auth/signin", payload, { showErrors: false })
+        );
+        
+        set({ isLoading: false });
+        
+        if (error) {
+          throw new Error(error.message);
         }
+        
+        get().setTokens(tokens);
+        window.location.reload();
+        return true;
       },
 
       signup: async (payload: SignupRequest): Promise<boolean> => {
-        try {
-          set({ isLoading: true });
-          await api.post("/api/auth/signup", payload, { 
-            showErrors: false 
-          });
-          return true;
-        } catch (err: any) {
-          throw new Error(err.message || "Registration failed");
-        } finally {
-          set({ isLoading: false });
+        set({ isLoading: true });
+        const [, error] = await tryAsync(() => 
+          api.post("/api/auth/signup", payload, { showErrors: false })
+        );
+        
+        set({ isLoading: false });
+        
+        if (error) {
+          throw new Error(error.message);
         }
+        
+        return true;
       },
 
       logout: async (): Promise<void> => {
-        try {
-          await api.post("/api/auth/logout", undefined, { showErrors: false });
-        } finally {
-          get().clearTokens();
-          window.location.reload();
-        }
+        await tryAsync(() => 
+          api.post("/api/auth/logout", undefined, { showErrors: false })
+        );
+        
+        get().clearTokens();
+        window.location.reload();
       },
 
       health: async (): Promise<HealthResponse> => {

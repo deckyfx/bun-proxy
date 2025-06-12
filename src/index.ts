@@ -1,5 +1,6 @@
 import Config from "@src/config";
 import { dnsManager } from "@src/dns";
+import { tryAsync } from "@src/utils/try";
 
 import IndexRoute from "./view/index";
 import HydrateRoute from "./view/hydrate";
@@ -8,22 +9,22 @@ import ApiRoute from "./api/index";
 // Graceful shutdown handling
 process.on("SIGINT", async () => {
   console.log("\n🛑 Received SIGINT, shutting down gracefully...");
-  try {
-    await dnsManager.stop();
-    console.log("✅ DNS server stopped gracefully");
-  } catch (error) {
+  const [, error] = await tryAsync(() => dnsManager.stop());
+  if (error) {
     console.error("❌ Error stopping DNS server:", error);
+  } else {
+    console.log("✅ DNS server stopped gracefully");
   }
   process.exit(0);
 });
 
 process.on("SIGTERM", async () => {
   console.log("\n🛑 Received SIGTERM, shutting down gracefully...");
-  try {
-    await dnsManager.stop();
-    console.log("✅ DNS server stopped gracefully");
-  } catch (error) {
+  const [, error] = await tryAsync(() => dnsManager.stop());
+  if (error) {
     console.error("❌ Error stopping DNS server:", error);
+  } else {
+    console.log("✅ DNS server stopped gracefully");
   }
   process.exit(0);
 });
@@ -45,7 +46,7 @@ export default Bun.serve({
     "/api/:scope/:command": ApiRoute,
     "/favicon.ico": {
       GET: async () => {
-        try {
+        const [response, error] = await tryAsync(async () => {
           const file = Bun.file("./src/app/assets/favicon.ico");
           if (await file.exists()) {
             return new Response(file, {
@@ -55,9 +56,17 @@ export default Bun.serve({
               },
             });
           }
-        } catch (error) {
+          return null;
+        });
+        
+        if (error) {
           console.error("Favicon serving error:", error);
         }
+        
+        if (response) {
+          return response;
+        }
+        
         return new Response("Favicon not found", { status: 404 });
       },
     },
@@ -67,13 +76,20 @@ export default Bun.serve({
         const path = url.pathname.replace("/assets/", "");
         const filePath = `./src/app/assets/${path}`;
 
-        try {
+        const [response, error] = await tryAsync(async () => {
           const file = Bun.file(filePath);
           if (await file.exists()) {
             return new Response(file);
           }
-        } catch (error) {
+          return null;
+        });
+
+        if (error) {
           console.error("Asset serving error:", error);
+        }
+        
+        if (response) {
+          return response;
         }
 
         return new Response("Asset not found", { status: 404 });

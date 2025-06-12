@@ -1,19 +1,18 @@
 import { Button, Card, Select, Table, type TableColumn, FloatingLabelInput } from "@app/components/index";
 import { useState, useEffect } from "react";
+import { DRIVER_TYPES, type DriversResponse } from "@src/types/driver";
+import type { CachedDnsResponse } from "@src/types/dns-unified";
 import { useDnsCacheStore } from "@app/stores/dnsCacheStore";
 import { useDialogStore } from "@app/stores/dialogStore";
-import { DRIVER_TYPES } from "@src/types/driver";
+import { tryAsync, trySync } from '@src/utils/try';
 
 interface CacheDriverProps {
-  drivers: any;
+  drivers: DriversResponse | null;
   loading: boolean;
 }
 
-interface CacheEntry {
+interface CacheEntry extends CachedDnsResponse {
   key: string;
-  value: any;
-  ttl?: number;
-  addedAt?: string;
 }
 
 const formatDriverName = (name: string): string => {
@@ -36,19 +35,28 @@ const tableColumns: TableColumn<CacheEntry>[] = [
     key: "key",
     label: "Domain/Key",
     className: "font-mono",
-    render: (value: string) => (
-      <div className="max-w-48 truncate" title={value}>
-        {value}
+    render: (value) => (
+      <div className="max-w-48 truncate" title={String(value || '')}>
+        {String(value || '')}
       </div>
     ),
   },
   {
-    key: "value",
+    key: "packet",
     label: "Cached Value",
-    render: (_value: any, entry: CacheEntry) => {
-      if (typeof entry.value === 'object') {
-        const addresses = entry.value?.addresses || entry.value?.resolvedAddresses || [];
-        if (Array.isArray(addresses) && addresses.length > 0) {
+    render: (_value, entry) => {
+      if (entry.packet && entry.packet.answers && Array.isArray(entry.packet.answers)) {
+        const addresses = entry.packet.answers
+          .filter((answer) => answer.type === 'A' || answer.type === 'AAAA')
+          .map((answer) => {
+            // A and AAAA records have string data
+            if (answer.type === 'A' || answer.type === 'AAAA') {
+              return (answer as { data: string }).data;
+            }
+            return null;
+          })
+          .filter((data): data is string => typeof data === 'string');
+        if (addresses.length > 0) {
           return (
             <div className="font-mono text-sm">
               <div className="max-w-32 truncate" title={addresses.join(", ")}>
@@ -59,28 +67,28 @@ const tableColumns: TableColumn<CacheEntry>[] = [
             </div>
           );
         }
-        return (
-          <div className="text-xs text-gray-500 max-w-32 truncate" title={JSON.stringify(entry.value)}>
-            {JSON.stringify(entry.value).length > 30 
-              ? JSON.stringify(entry.value).substring(0, 30) + '...'
-              : JSON.stringify(entry.value)
-            }
-          </div>
-        );
       }
-      return <span className="font-mono text-sm">{String(entry.value)}</span>;
+      return (
+        <div className="text-xs text-gray-500 max-w-32 truncate" title={JSON.stringify(entry.packet)}>
+          {JSON.stringify(entry.packet).length > 30 
+            ? JSON.stringify(entry.packet).substring(0, 30) + '...'
+            : JSON.stringify(entry.packet)
+          }
+        </div>
+      );
     },
   },
   {
-    key: "ttl",
+    key: "cache",
     label: "TTL",
-    render: (value: number | undefined) => {
-      if (value === undefined) return <span className="text-gray-400">No TTL</span>;
-      if (value === 0) return <span className="text-red-500">Expired</span>;
+    render: (_value, entry) => {
+      const ttl = entry.cache?.ttl;
+      if (ttl === undefined) return <span className="text-gray-400">No TTL</span>;
+      if (ttl === 0) return <span className="text-red-500">Expired</span>;
       
-      const hours = Math.floor(value / 3600);
-      const minutes = Math.floor((value % 3600) / 60);
-      const seconds = value % 60;
+      const hours = Math.floor(ttl / 3600);
+      const minutes = Math.floor((ttl % 3600) / 60);
+      const seconds = ttl % 60;
       
       if (hours > 0) {
         return <span className="text-sm">{hours}h {minutes}m</span>;
@@ -92,13 +100,14 @@ const tableColumns: TableColumn<CacheEntry>[] = [
     },
   },
   {
-    key: "addedAt",
+    key: "cache",
     label: "Added",
-    render: (value: string | undefined) => {
-      if (!value) return <span className="text-gray-400">-</span>;
+    render: (_value, entry) => {
+      const timestamp = entry.cache?.timestamp;
+      if (!timestamp || typeof timestamp !== 'number') return <span className="text-gray-400">-</span>;
       return (
         <span className="text-sm text-gray-600">
-          {new Date(value).toLocaleTimeString()}
+          {new Date(timestamp).toLocaleTimeString()}
         </span>
       );
     },
@@ -123,9 +132,9 @@ export default function CacheDriver({ drivers, loading }: CacheDriverProps) {
   const { showConfirm, showCustom, closeDialog } = useDialogStore();
 
   useEffect(() => {
-    if (drivers?.current?.cache) {
+    if (drivers?.current?.[DRIVER_TYPES.CACHE]) {
       setDriverForm({
-        driver: drivers.current.cache.implementation || 'inmemory'
+        driver: drivers.current[DRIVER_TYPES.CACHE].implementation || 'inmemory'
       });
     }
   }, [drivers]);
@@ -173,17 +182,11 @@ export default function CacheDriver({ drivers, loading }: CacheDriverProps) {
       return;
     }
 
-    let parsedValue: any;
-    try {
-      // Try to parse as JSON first
-      parsedValue = JSON.parse(newEntry.value);
-    } catch {
-      // If not JSON, treat as string
-      parsedValue = newEntry.value;
-    }
+    const [parsedValue, parseError] = trySync(() => JSON.parse(newEntry.value as string));
+    const finalValue = parseError ? newEntry.value : parsedValue;
 
     const ttl = newEntry.ttl ? parseInt(newEntry.ttl) : undefined;
-    const success = await addEntry(newEntry.key, parsedValue, ttl);
+    const success = await addEntry(newEntry.key, finalValue, ttl);
     
     if (success) {
       setNewEntry({ key: '', value: '', ttl: '3600' });
@@ -219,24 +222,19 @@ export default function CacheDriver({ drivers, loading }: CacheDriverProps) {
         if (!formData.key || !formData.value) return;
 
         setSubmitting(true);
-        try {
-          let parsedValue: any;
-          try {
-            parsedValue = JSON.parse(formData.value);
-          } catch {
-            parsedValue = formData.value;
-          }
-
-          const ttl = formData.ttl ? parseInt(formData.ttl) : undefined;
-          const success = await addEntry(formData.key, parsedValue, ttl);
-          
-          if (success) {
-            await fetchCacheContent();
-            closeDialog(dialogId);
-          }
-        } finally {
-          setSubmitting(false);
+        
+        const [parsedValue, parseError] = trySync(() => JSON.parse(formData.value as string));
+        const finalValue = parseError ? formData.value : parsedValue;
+        
+        const ttl = formData.ttl ? parseInt(formData.ttl) : undefined;
+        const [success, error] = await tryAsync(() => addEntry(formData.key, finalValue, ttl));
+        
+        if (!error && success) {
+          await fetchCacheContent();
+          closeDialog(dialogId);
         }
+        
+        setSubmitting(false);
       };
 
       return (
@@ -415,7 +413,7 @@ export default function CacheDriver({ drivers, loading }: CacheDriverProps) {
               <span className="material-icons text-lg">storage</span>
               <span className="font-medium">Cache Entries</span>
               <span className="text-sm text-gray-500">
-                ({Array.isArray(content?.content) ? content.content.length : 0} entries)
+                ({content && 'entries' in content && Array.isArray(content.entries) ? content.entries.length : 0} entries)
               </span>
             </div>
           </div>
@@ -424,7 +422,7 @@ export default function CacheDriver({ drivers, loading }: CacheDriverProps) {
             columns={[...tableColumns, {
               key: "actions",
               label: "Actions",
-              render: (_value: any, entry: CacheEntry) => (
+              render: (_value, entry) => (
                 <button
                   onClick={() => handleRemoveEntry(entry.key)}
                   className="inline-flex items-center gap-1 px-2 py-1 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
@@ -435,12 +433,12 @@ export default function CacheDriver({ drivers, loading }: CacheDriverProps) {
                 </button>
               ),
             }]}
-            data={Array.isArray(content?.content) ? content.content : []}
+            data={content && 'entries' in content && Array.isArray(content.entries) ? content.entries as CacheEntry[] : []}
             loading={contentLoading}
             loadingMessage="Loading cache entries..."
             emptyMessage={
-              typeof content?.content === "string"
-                ? content.content
+              !content || !content.success
+                ? "Failed to load cache entries"
                 : currentDriver?.implementation === "inmemory"
                 ? "No cache entries found. Add entries manually or start DNS queries to populate the cache."
                 : "No cache entries available. Click Refresh to load entries from the current driver."

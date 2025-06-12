@@ -1,5 +1,6 @@
 import { dnsResolver } from "@src/dns/resolver";
 import { udpServerManager } from "@src/dns/udpServerManager";
+import { trySync, tryAsync } from "@src/utils/try";
 
 export async function handleDoHRequest(req: Request): Promise<Response> {
   // Ensure resolver is initialized (this will happen when the app starts)
@@ -16,7 +17,7 @@ export async function handleDoHRequest(req: Request): Promise<Response> {
     }
   }
 
-  try {
+  const [response, error] = await tryAsync(async () => {
     let dnsQuery: Buffer;
     const method = req.method;
 
@@ -63,10 +64,9 @@ export async function handleDoHRequest(req: Request): Promise<Response> {
 
     // Parse the DNS query
     const dnsPacket = require("dns-packet");
-    let parsedQuery;
-    try {
-      parsedQuery = dnsPacket.decode(dnsQuery);
-    } catch (error) {
+    const [parsedQuery, parseError] = trySync(() => dnsPacket.decode(dnsQuery));
+    
+    if (parseError) {
       return new Response("Invalid DNS query", {
         status: 400,
         headers: { "Content-Type": "text/plain" },
@@ -96,13 +96,17 @@ export async function handleDoHRequest(req: Request): Promise<Response> {
         "Access-Control-Allow-Headers": "Content-Type",
       },
     });
-  } catch (error) {
+  });
+
+  if (error) {
     console.error("DoH request error:", error);
     return new Response("Internal server error", {
       status: 500,
       headers: { "Content-Type": "text/plain" },
     });
   }
+
+  return response!;
 }
 
 export default {

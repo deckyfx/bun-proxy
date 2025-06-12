@@ -1,6 +1,16 @@
 import { dnsManager } from "@src/dns/manager";
 import { Auth, type AuthUser } from "@utils/auth";
-import { DRIVER_TYPES, DRIVER_METHODS, type DriverConfig, type DriverContentResponse } from "@src/types/driver";
+import { 
+  DRIVER_TYPES, 
+  DRIVER_METHODS, 
+  type DriverConfig, 
+  type DriverListResponse, 
+  type DriverCheckResponse, 
+  type DriverActionResponse, 
+  type DriverImportResponse, 
+  type DriverErrorResponse 
+} from "@src/types/driver";
+import type { WhitelistEntry } from "@src/dns/drivers/whitelist/BaseDriver";
 import { dnsEventService } from "@src/dns/DNSEventService";
 import { 
   createWhitelistDriverInstance, 
@@ -8,70 +18,84 @@ import {
   isServerRunning, 
   createErrorResponse, 
   createSuccessResponse, 
-  checkServerAvailability 
+  checkServerAvailability,
+  getDriverName
 } from "./utils";
+import { trySync, tryAsync } from "@src/utils/try";
 
 // GET /api/dns/whitelist - Get whitelist driver configuration
 export async function GetWhitelistDriverInfo(_req: Request, _user: AuthUser): Promise<Response> {
-  try {
+  const [result, error] = trySync(() => {
     const drivers = getDrivers();
     const serverRunning = isServerRunning();
 
     const response = {
       current: {
         type: DRIVER_TYPES.WHITELIST,
-        implementation: drivers.whitelist?.constructor.DRIVER_NAME || 'inmemory',
+        implementation: getDriverName(drivers.whitelist),
         status: serverRunning ? 'active' : 'inactive'
       },
       available: ['inmemory', 'file', 'sqlite']
     };
 
     return createSuccessResponse(response);
-  } catch (error) {
+  });
+
+  if (error) {
     return createErrorResponse(
       'Failed to get whitelist driver configuration',
-      error instanceof Error ? error.message : 'Unknown error'
+      error.message
     );
   }
+
+  return result;
 }
 
 // POST /api/dns/whitelist - Handle whitelist driver operations
 export async function HandleWhitelistDriverOperation(req: Request, _user: AuthUser): Promise<Response> {
-  try {
-    const body = await req.json() as DriverConfig;
+  const [result, error] = await tryAsync(async () => {
+    const [body, parseError] = await tryAsync(() => req.json());
+    if (parseError) {
+      return createErrorResponse('Invalid JSON', parseError.message, 400);
+    }
     
-    if (!body.method) {
+    const config = body as DriverConfig;
+    if (!config.method) {
       return createErrorResponse('Missing required field', 'method is required', 400);
     }
 
-    const config = { ...body, scope: DRIVER_TYPES.WHITELIST };
+    const configWithScope = { ...config, scope: DRIVER_TYPES.WHITELIST };
 
-    switch (config.method) {
+    switch (configWithScope.method) {
       case DRIVER_METHODS.SET:
-        return await setWhitelistDriver(config);
+        return await setWhitelistDriver(configWithScope);
       case DRIVER_METHODS.GET:
-        return await getWhitelistDriverContent(config);
+        return await getWhitelistDriverContent(configWithScope);
       case DRIVER_METHODS.CLEAR:
-        return await clearWhitelistDriver(config);
+        return await clearWhitelistDriver(configWithScope);
       case DRIVER_METHODS.ADD:
-        return await addWhitelistEntry(config);
+        return await addWhitelistEntry(configWithScope);
       case DRIVER_METHODS.REMOVE:
-        return await removeWhitelistEntry(config);
+        return await removeWhitelistEntry(configWithScope);
       case DRIVER_METHODS.UPDATE:
-        return await updateWhitelistEntry(config);
+        return await updateWhitelistEntry(configWithScope);
       case DRIVER_METHODS.IMPORT:
-        return await importWhitelistEntries(config);
+        return await importWhitelistEntries(configWithScope);
       case DRIVER_METHODS.EXPORT:
-        return await exportWhitelistEntries(config);
+        return await exportWhitelistEntries(configWithScope);
       default:
         return createErrorResponse('Invalid method', 'method must be SET, GET, CLEAR, ADD, REMOVE, UPDATE, IMPORT, or EXPORT', 400);
     }
-  } catch (error) {
+  });
+
+  if (error) {
     return createErrorResponse(
       'Failed to process whitelist driver operation',
-      error instanceof Error ? error.message : 'Unknown error'
+      error.message
     );
   }
+
+  return result;
 }
 
 async function setWhitelistDriver(config: DriverConfig): Promise<Response> {
@@ -79,8 +103,8 @@ async function setWhitelistDriver(config: DriverConfig): Promise<Response> {
     return createErrorResponse('Missing driver field', 'driver field is required for SET method', 400);
   }
 
-  try {
-    const newDriverInstance = createWhitelistDriverInstance(config.driver, config.options);
+  const [result, error] = await tryAsync(async () => {
+    const newDriverInstance = createWhitelistDriverInstance(config.driver!, config.options);
     const currentDrivers = dnsManager.getLastUsedDrivers();
     
     const updatedDrivers = { ...currentDrivers, whitelist: newDriverInstance };
@@ -95,84 +119,112 @@ async function setWhitelistDriver(config: DriverConfig): Promise<Response> {
       options: config.options,
       serverRunning: status.enabled
     });
-  } catch (error) {
+  });
+
+  if (error) {
     return createErrorResponse(
       'Failed to set whitelist driver',
-      error instanceof Error ? error.message : 'Unknown error'
+      error.message
     );
   }
+
+  return result;
 }
 
 async function getWhitelistDriverContent(config: DriverConfig): Promise<Response> {
   const serverError = checkServerAvailability();
   if (serverError) return serverError;
 
-  try {
+  const [result, error] = await tryAsync(async () => {
     const drivers = getDrivers();
     const whitelistDriver = drivers.whitelist;
-    let content: any = null;
     
-    if (whitelistDriver) {
-      if (config.key) {
-        // Get specific domain check
-        content = await whitelistDriver.contains(config.key);
-      } else {
-        // Get all entries
-        const category = config.filter?.category;
-        content = await whitelistDriver.list(category);
-        
-        // Apply additional filtering if specified
-        if (config.filter) {
-          if (config.filter.domain) {
-            content = content.filter((entry: any) => 
-              entry.domain.toLowerCase().includes(config.filter!.domain.toLowerCase())
-            );
-          }
-          if (config.filter.source) {
-            content = content.filter((entry: any) => entry.source === config.filter!.source);
-          }
-          if (config.filter.reason) {
-            content = content.filter((entry: any) => 
-              entry.reason && entry.reason.toLowerCase().includes(config.filter!.reason.toLowerCase())
-            );
-          }
-        }
-      }
-    } else {
-      content = 'Whitelist driver not available';
+    if (!whitelistDriver) {
+      const errorResponse: DriverErrorResponse = {
+        success: false,
+        scope: config.scope,
+        driver: getDriverName(drivers.whitelist),
+        error: 'Whitelist driver not available',
+        timestamp: Date.now()
+      };
+      return new Response(JSON.stringify(errorResponse), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      });
     }
 
-    const response: DriverContentResponse = {
-      success: true,
-      scope: config.scope,
-      driver: drivers.whitelist?.constructor.DRIVER_NAME || 'unknown',
-      content,
-      metadata: {
-        total: Array.isArray(content) ? content.length : 0,
-        timestamp: new Date().toISOString()
+    if (config.key) {
+      // Check specific domain
+      const exists = await whitelistDriver.contains(config.key);
+      const checkResponse: DriverCheckResponse = {
+        success: true,
+        scope: config.scope,
+        driver: getDriverName(drivers.whitelist),
+        exists,
+        key: config.key,
+        timestamp: Date.now()
+      };
+      return createSuccessResponse(checkResponse);
+    } else {
+      // Get all entries
+      const category = config.filter?.category;
+      let whitelistEntries: WhitelistEntry[] = await whitelistDriver.list(category);
+      
+      // Apply additional filtering if specified
+      if (config.filter) {
+        if (config.filter.domain) {
+          whitelistEntries = whitelistEntries.filter((entry: WhitelistEntry) => 
+            entry.domain.toLowerCase().includes(config.filter!.domain.toLowerCase())
+          );
+        }
+        if (config.filter.source) {
+          whitelistEntries = whitelistEntries.filter((entry: WhitelistEntry) => entry.source === config.filter!.source);
+        }
+        if (config.filter.reason) {
+          whitelistEntries = whitelistEntries.filter((entry: WhitelistEntry) => 
+            entry.reason && entry.reason.toLowerCase().includes(config.filter!.reason.toLowerCase())
+          );
+        }
       }
-    };
+      
+      const listResponse: DriverListResponse = {
+        success: true,
+        scope: config.scope,
+        driver: getDriverName(drivers.whitelist),
+        entries: whitelistEntries,
+        timestamp: Date.now(),
+        metadata: {
+          total: whitelistEntries.length,
+          filtered: config.filter ? whitelistEntries.length : undefined,
+          timestamp: new Date().toISOString()
+        }
+      };
+      return createSuccessResponse(listResponse);
+    }
+  });
 
-    return createSuccessResponse(response);
-  } catch (error) {
-    const response: DriverContentResponse = {
+  if (error) {
+    const errorResponse: DriverErrorResponse = {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      scope: config.scope,
+      error: error.message,
       timestamp: Date.now()
     };
     
-    return new Response(JSON.stringify(response), {
+    return new Response(JSON.stringify(errorResponse), {
       status: 500,
       headers: { 'Content-Type': 'application/json' }
     });
   }
+
+  return result;
 }
 
 async function clearWhitelistDriver(config: DriverConfig): Promise<Response> {
   const serverError = checkServerAvailability();
   if (serverError) return serverError;
 
-  try {
+  const [result, error] = await tryAsync(async () => {
     const drivers = getDrivers();
     const whitelistDriver = drivers.whitelist;
     let cleared = false;
@@ -189,19 +241,24 @@ async function clearWhitelistDriver(config: DriverConfig): Promise<Response> {
       message = 'Whitelist driver does not support clearing';
     }
 
-    return createSuccessResponse({
+    const actionResponse: DriverActionResponse = {
       success: cleared,
-      message,
       scope: config.scope,
-      driver: drivers.whitelist?.constructor.DRIVER_NAME || 'unknown',
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
+      driver: getDriverName(drivers.whitelist),
+      message,
+      timestamp: Date.now()
+    };
+    return createSuccessResponse(actionResponse);
+  });
+
+  if (error) {
     return createErrorResponse(
       'Failed to clear whitelist driver',
-      error instanceof Error ? error.message : 'Unknown error'
+      error.message
     );
   }
+
+  return result;
 }
 
 async function addWhitelistEntry(config: DriverConfig): Promise<Response> {
@@ -212,7 +269,7 @@ async function addWhitelistEntry(config: DriverConfig): Promise<Response> {
     return createErrorResponse('Missing required field', 'key (domain) is required for ADD method', 400);
   }
 
-  try {
+  const [result, error] = await tryAsync(async () => {
     const drivers = getDrivers();
     const whitelistDriver = drivers.whitelist;
 
@@ -220,24 +277,29 @@ async function addWhitelistEntry(config: DriverConfig): Promise<Response> {
       return createErrorResponse('Whitelist driver not available', 'Whitelist driver does not support adding entries');
     }
 
-    await whitelistDriver.add(config.key, config.reason, config.category);
+    await whitelistDriver.add(config.key!, config.reason, config.category);
 
     // Emit SSE event for whitelist update
     dnsEventService.refreshDriverContent(DRIVER_TYPES.WHITELIST);
 
-    return createSuccessResponse({
+    const actionResponse: DriverActionResponse = {
+      success: true,
+      scope: config.scope,
+      driver: getDriverName(drivers.whitelist),
       message: `Domain added to whitelist successfully`,
-      domain: config.key,
-      reason: config.reason,
-      category: config.category,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
+      timestamp: Date.now()
+    };
+    return createSuccessResponse(actionResponse);
+  });
+
+  if (error) {
     return createErrorResponse(
       'Failed to add whitelist entry',
-      error instanceof Error ? error.message : 'Unknown error'
+      error.message
     );
   }
+
+  return result;
 }
 
 async function removeWhitelistEntry(config: DriverConfig): Promise<Response> {
@@ -248,7 +310,7 @@ async function removeWhitelistEntry(config: DriverConfig): Promise<Response> {
     return createErrorResponse('Missing required field', 'key (domain) is required for REMOVE method', 400);
   }
 
-  try {
+  const [result, error] = await tryAsync(async () => {
     const drivers = getDrivers();
     const whitelistDriver = drivers.whitelist;
 
@@ -256,25 +318,32 @@ async function removeWhitelistEntry(config: DriverConfig): Promise<Response> {
       return createErrorResponse('Whitelist driver not available', 'Whitelist driver does not support removing entries');
     }
 
-    const removed = await whitelistDriver.remove(config.key);
+    const removed = await whitelistDriver.remove(config.key!);
 
     // Emit SSE event for whitelist update (only if removal was successful)
     if (removed) {
       dnsEventService.refreshDriverContent(DRIVER_TYPES.WHITELIST);
     }
 
-    return createSuccessResponse({
+    const actionResponse: DriverActionResponse = {
+      success: true,
+      scope: config.scope,
+      driver: getDriverName(drivers.whitelist),
       message: removed ? `Domain removed from whitelist successfully` : `Domain not found in whitelist`,
-      domain: config.key,
-      removed,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
+      timestamp: Date.now(),
+      affected: removed ? 1 : 0
+    };
+    return createSuccessResponse(actionResponse);
+  });
+
+  if (error) {
     return createErrorResponse(
       'Failed to remove whitelist entry',
-      error instanceof Error ? error.message : 'Unknown error'
+      error.message
     );
   }
+
+  return result;
 }
 
 async function updateWhitelistEntry(config: DriverConfig): Promise<Response> {
@@ -285,7 +354,7 @@ async function updateWhitelistEntry(config: DriverConfig): Promise<Response> {
     return createErrorResponse('Missing required field', 'key (domain) is required for UPDATE method', 400);
   }
 
-  try {
+  const [result, error] = await tryAsync(async () => {
     const drivers = getDrivers();
     const whitelistDriver = drivers.whitelist;
 
@@ -293,31 +362,36 @@ async function updateWhitelistEntry(config: DriverConfig): Promise<Response> {
       return createErrorResponse('Whitelist driver not available', 'Whitelist driver does not support updating entries');
     }
 
-    const exists = await whitelistDriver.contains(config.key);
+    const exists = await whitelistDriver.contains(config.key!);
     if (!exists) {
       return createErrorResponse('Entry not found', `Domain '${config.key}' is not in the whitelist`, 404);
     }
 
     // Remove and re-add with new values
-    await whitelistDriver.remove(config.key);
-    await whitelistDriver.add(config.key, config.reason, config.category);
+    await whitelistDriver.remove(config.key!);
+    await whitelistDriver.add(config.key!, config.reason, config.category);
 
     // Emit SSE event for whitelist update
     dnsEventService.refreshDriverContent(DRIVER_TYPES.WHITELIST);
 
-    return createSuccessResponse({
+    const actionResponse: DriverActionResponse = {
+      success: true,
+      scope: config.scope,
+      driver: getDriverName(drivers.whitelist),
       message: `Whitelist entry updated successfully`,
-      domain: config.key,
-      reason: config.reason,
-      category: config.category,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
+      timestamp: Date.now()
+    };
+    return createSuccessResponse(actionResponse);
+  });
+
+  if (error) {
     return createErrorResponse(
       'Failed to update whitelist entry',
-      error instanceof Error ? error.message : 'Unknown error'
+      error.message
     );
   }
+
+  return result;
 }
 
 async function importWhitelistEntries(config: DriverConfig): Promise<Response> {
@@ -328,7 +402,7 @@ async function importWhitelistEntries(config: DriverConfig): Promise<Response> {
     return createErrorResponse('Missing required field', 'entries array is required for IMPORT method', 400);
   }
 
-  try {
+  const [result, error] = await tryAsync(async () => {
     const drivers = getDrivers();
     const whitelistDriver = drivers.whitelist;
 
@@ -336,10 +410,10 @@ async function importWhitelistEntries(config: DriverConfig): Promise<Response> {
       return createErrorResponse('Whitelist driver not available', 'Whitelist driver does not support importing entries');
     }
 
-    const entriesWithDefaults = config.entries.map(entry => ({
+    const entriesWithDefaults = config.entries!.map(entry => ({
       domain: entry.domain || entry.key || '',
       reason: entry.reason || 'Imported entry',
-      addedAt: new Date(),
+      addedAt: Date.now(),
       source: 'import' as const,
       category: entry.category || 'imported'
     }));
@@ -349,25 +423,32 @@ async function importWhitelistEntries(config: DriverConfig): Promise<Response> {
     // Emit SSE event for whitelist update
     dnsEventService.refreshDriverContent(DRIVER_TYPES.WHITELIST);
 
-    return createSuccessResponse({
+    const importResponse: DriverImportResponse = {
+      success: true,
+      scope: config.scope,
+      driver: getDriverName(drivers.whitelist),
       message: `Successfully imported ${imported} whitelist entries`,
       imported,
-      total: config.entries.length,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
+      timestamp: Date.now()
+    };
+    return createSuccessResponse(importResponse);
+  });
+
+  if (error) {
     return createErrorResponse(
       'Failed to import whitelist entries',
-      error instanceof Error ? error.message : 'Unknown error'
+      error.message
     );
   }
+
+  return result;
 }
 
 async function exportWhitelistEntries(_config: DriverConfig): Promise<Response> {
   const serverError = checkServerAvailability();
   if (serverError) return serverError;
 
-  try {
+  const [result, error] = await tryAsync(async () => {
     const drivers = getDrivers();
     const whitelistDriver = drivers.whitelist;
 
@@ -383,12 +464,16 @@ async function exportWhitelistEntries(_config: DriverConfig): Promise<Response> 
       count: entries.length,
       timestamp: new Date().toISOString()
     });
-  } catch (error) {
+  });
+
+  if (error) {
     return createErrorResponse(
       'Failed to export whitelist entries',
-      error instanceof Error ? error.message : 'Unknown error'
+      error.message
     );
   }
+
+  return result;
 }
 
 export default {

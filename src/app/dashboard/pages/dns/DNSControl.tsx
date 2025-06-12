@@ -1,6 +1,7 @@
 import { Button, FloatingLabelInput, Card } from "@app_components/index";
 import { useState } from "react";
 import { useDNSStore } from "@app/stores/dnsStore";
+import { tryAsync } from '@src/utils/try';
 
 export default function DNSControl() {
   const {
@@ -49,18 +50,20 @@ export default function DNSControl() {
       }
     }
 
-    try {
-      if (dnsStatus.enabled) {
-        await stopServer();
-      } else {
-        await startServer({
-          port: dnsConfig.port,
-          enableWhitelist: dnsConfig.enableWhitelist,
-          secondaryDns: dnsConfig.secondaryDns,
-          nextdnsConfigId: dnsConfig.nextdnsConfigId,
-        });
-      }
-    } catch (error) {
+    let result, error;
+    
+    if (dnsStatus.enabled) {
+      [result, error] = await tryAsync(stopServer);
+    } else {
+      [result, error] = await tryAsync(() => startServer({
+        port: dnsConfig.port,
+        enableWhitelist: dnsConfig.enableWhitelist,
+        secondaryDns: dnsConfig.secondaryDns,
+        nextdnsConfigId: dnsConfig.nextdnsConfigId,
+      }));
+    }
+    
+    if (error) {
       console.error("Failed to toggle DNS server:", error);
       alert("Failed to toggle DNS server");
     }

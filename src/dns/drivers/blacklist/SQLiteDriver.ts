@@ -1,9 +1,13 @@
-import type { BlacklistEntry, BlacklistOptions, BlacklistStats } from './BaseDriver';
-import { BaseDriver } from './BaseDriver';
-import { DnsBlacklist } from '@src/models/DnsBlacklist';
+import type {
+  BlacklistEntry,
+  BlacklistOptions,
+  BlacklistStats,
+} from "./BaseDriver";
+import { BaseDriver } from "./BaseDriver";
+import { DnsBlacklist } from "@src/models/DnsBlacklist";
 
 export class SQLiteDriver extends BaseDriver {
-  static readonly DRIVER_NAME = 'sqlite';
+  static override readonly DRIVER_NAME = "sqlite";
 
   constructor(options: BlacklistOptions = {}) {
     super(options);
@@ -35,7 +39,7 @@ export class SQLiteDriver extends BaseDriver {
 
   async isBlocked(domain: string): Promise<boolean> {
     const normalizedDomain = this.normalizeDomain(domain);
-    
+
     // Check exact match first
     if (await DnsBlacklist.contains(normalizedDomain)) {
       return true;
@@ -56,7 +60,7 @@ export class SQLiteDriver extends BaseDriver {
 
   async getBlockingRule(domain: string): Promise<BlacklistEntry | null> {
     const normalizedDomain = this.normalizeDomain(domain);
-    
+
     // Check exact match first
     const exactMatch = await DnsBlacklist.getBlockingRule(normalizedDomain);
     if (exactMatch) {

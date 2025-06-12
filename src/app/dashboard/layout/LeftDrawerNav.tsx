@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Icon, Button } from "@app_components/index";
 import { useAuthStore } from "@app_stores/authStore";
+import { tryAsync, trySync } from '@src/utils/try';
 
 interface NavItem {
   id: string;
@@ -22,13 +23,19 @@ export function LeftDrawerNav() {
   const { logout } = useAuthStore();
 
   // Safely try to use router hooks
-  let navigate: any = null;
-  let location: any = null;
-  try {
-    navigate = useNavigate();
-    location = useLocation();
-  } catch (error) {
-    // Router hooks not available (SSR or outside router context)
+  let navigate: ((path: string) => void) | null = null;
+  let location: { pathname: string; } | null = null;
+  
+  const [routerResult, routerError] = trySync(() => {
+    return {
+      navigate: useNavigate(),
+      location: useLocation()
+    };
+  });
+  
+  if (!routerError && routerResult) {
+    navigate = routerResult.navigate;
+    location = routerResult.location;
   }
 
   const getActiveItem = () => {
@@ -53,9 +60,9 @@ export function LeftDrawerNav() {
   };
 
   const handleLogout = async () => {
-    try {
-      await logout();
-    } catch (error) {
+    const [, error] = await tryAsync(logout);
+    
+    if (error) {
       console.error("Logout error:", error);
     }
   };

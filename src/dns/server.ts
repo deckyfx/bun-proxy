@@ -1,7 +1,10 @@
 import DNS2 from "dns2";
+import { tryAsync, trySync } from '@src/utils/try';
 import { dnsResolver, type DNSResolverDrivers } from "./resolver";
 import { BaseProvider } from "./providers";
-import type { LogEntry } from "./drivers/logs/BaseDriver";
+import type { LogEntry, ServerEventLogEntry } from "../types/dns-unified";
+import { createErrorResponse } from "../utils/dns-bridge";
+import { v4 as uuidv4 } from 'uuid';
 
 // Global log event emitter for SSE
 class LogEventEmitter {
@@ -25,10 +28,9 @@ class LogEventEmitter {
 
   emit(logEntry: LogEntry): void {
     this.listeners.forEach(callback => {
-      try {
-        callback(logEntry);
-      } catch (error) {
-        console.error('Error in log event listener:', error);
+      const [, callbackError] = trySync(() => callback(logEntry));
+      if (callbackError) {
+        console.error('Error in log event listener:', callbackError);
       }
     });
   }
@@ -59,7 +61,7 @@ export class DNSProxyServer {
       udp: true,
       tcp: false,
       handle: async (request, send, rinfo) => {
-        try {
+        const [, queryError] = await tryAsync(async () => {
           const queryBuffer = this.packetToBuffer(request);
           const clientInfo = {
             address: rinfo?.address,
@@ -69,19 +71,31 @@ export class DNSProxyServer {
           
           const result = await dnsResolver.resolve(queryBuffer, clientInfo);
           send(result.responseBuffer as unknown as DNS2.DnsResponse);
-        } catch (error) {
-          console.error("DNS query handling error:", error);
+        });
+        
+        if (queryError) {
+          console.error("DNS query handling error:", queryError);
           
-          // Send SERVFAIL response as buffer
-          const errorBuffer = require('dns-packet').encode({
-            id: (request as any).header?.id || 0,
-            type: 'response',
-            flags: 384, // QR=1, RD=1
-            questions: (request as any).questions || [],
-            answers: [],
-            rcode: 2 // SERVFAIL
+          // Send SERVFAIL response using bridge utility
+          const [, fallbackError] = trySync(() => {
+            const queryBuffer = this.packetToBuffer(request);
+            const errorBuffer = createErrorResponse(queryBuffer);
+            send(errorBuffer as unknown as DNS2.DnsResponse);
           });
-          send(errorBuffer as unknown as DNS2.DnsResponse);
+          
+          if (fallbackError) {
+            console.error("Failed to create error response:", fallbackError);
+            // Send minimal SERVFAIL as last resort
+            const minimalError = require('dns-packet').encode({
+              id: 0,
+              type: 'response',
+              flags: 384,
+              questions: [],
+              answers: [],
+              rcode: 2
+            });
+            send(minimalError as unknown as DNS2.DnsResponse);
+          }
         }
       }
     });
@@ -93,10 +107,10 @@ export class DNSProxyServer {
           console.log(`DNS proxy server started on port ${this.port}`);
           
           // Emit server start event to SSE and persistent logs
-          const startLogEntry: LogEntry = {
+          const startLogEntry: ServerEventLogEntry = {
             type: 'server_event',
-            requestId: 'server-start',
-            timestamp: new Date(),
+            id: uuidv4(),
+            timestamp: Date.now(),
             level: 'info',
             eventType: 'started',
             message: `DNS proxy server started on port ${this.port}`,
@@ -119,10 +133,10 @@ export class DNSProxyServer {
           console.error("DNS server error:", error);
           
           // Emit server start error event to SSE and persistent logs
-          const errorLogEntry: LogEntry = {
+          const errorLogEntry: ServerEventLogEntry = {
             type: 'server_event',
-            requestId: 'server-start-error',
-            timestamp: new Date(),
+            id: uuidv4(),
+            timestamp: Date.now(),
             level: 'error',
             eventType: 'crashed',
             message: `Failed to start DNS proxy server on port ${this.port}`,
@@ -151,16 +165,16 @@ export class DNSProxyServer {
       return;
     }
 
-    try {
-      await this.server.close();
+    const [, stopError] = await tryAsync(async () => {
+      await this.server!.close();
       this.isRunning = false;
       console.log("DNS proxy server stopped");
       
       // Emit server stop event to SSE and persistent logs
-      const stopLogEntry: LogEntry = {
+      const stopLogEntry: ServerEventLogEntry = {
         type: 'server_event',
-        requestId: 'server-stop',
-        timestamp: new Date(),
+        id: uuidv4(),
+        timestamp: Date.now(),
         level: 'info',
         eventType: 'stopped',
         message: `DNS proxy server stopped on port ${this.port}`,
@@ -172,20 +186,22 @@ export class DNSProxyServer {
       if (dnsResolver.hasLogDriver()) {
         dnsResolver.getLogDriver().log(stopLogEntry);
       }
-    } catch (error) {
-      console.error("Error stopping DNS server:", error);
+    });
+    
+    if (stopError) {
+      console.error("Error stopping DNS server:", stopError);
       
       // Emit server stop error event to SSE and persistent logs
       const errorLogEntry: LogEntry = {
         type: 'server_event',
-        requestId: 'server-stop-error',
-        timestamp: new Date(),
+        id: uuidv4(),
+        timestamp: Date.now(),
         level: 'error',
         eventType: 'crashed',
         message: `Failed to stop DNS proxy server on port ${this.port}`,
         port: this.port,
-        error: error instanceof Error ? error.message : String(error),
-        errorStack: error instanceof Error ? error.stack : undefined
+        error: stopError.message,
+        errorStack: stopError.stack
       };
       
       // Pipe to both SSE and persistent driver
@@ -194,7 +210,7 @@ export class DNSProxyServer {
         dnsResolver.getLogDriver().log(errorLogEntry);
       }
       
-      throw error;
+      throw stopError;
     }
   }
 
@@ -212,46 +228,58 @@ export class DNSProxyServer {
   }
 
   // Helper methods for DNS2 packet conversion
-  private packetToBuffer(packet: any): Buffer {
+  private packetToBuffer(packet: unknown): Buffer {
     // If it's already a Buffer, return it
     if (Buffer.isBuffer(packet)) {
       return packet;
     }
     
-    // Use DNS2's toBuffer method if available
-    if (packet.toBuffer && typeof packet.toBuffer === 'function') {
-      try {
-        const result = packet.toBuffer();
-        if (Buffer.isBuffer(result)) {
-          return result;
-        }
-      } catch (error) {
-        console.warn('Failed to use packet.toBuffer():', error);
+    // Type guard for packet with toBuffer method
+    if (this.hasToBufferMethod(packet)) {
+      const [bufferResult, bufferError] = trySync(() => packet.toBuffer());
+      if (bufferError) {
+        console.warn('Failed to use packet.toBuffer():', bufferError);
+      } else if (Buffer.isBuffer(bufferResult)) {
+        return bufferResult;
       }
     }
     
-    // Fallback: use dns-packet to encode the response
-    try {
-      return require('dns-packet').encode({
+    // Fallback: use dns-packet to encode if packet has expected structure
+    if (this.isDnsPacketLike(packet)) {
+      const [encodedResult, encodeError] = trySync(() => require('dns-packet').encode({
         id: packet.header?.id || 0,
         type: 'response',
         flags: packet.header?.qr ? 384 : 0, // QR=1, RD=1
         questions: packet.questions || [],
         answers: packet.answers || [],
         rcode: packet.header?.rcode || 0
-      });
-    } catch (error) {
-      console.warn('Failed to encode DNS packet:', error);
-      // Return a minimal valid DNS response
-      return require('dns-packet').encode({
-        id: 0,
-        type: 'response',
-        flags: 384,
-        questions: [],
-        answers: [],
-        rcode: 2 // SERVFAIL
-      });
+      }));
+      
+      if (encodeError) {
+        console.warn('Failed to encode DNS packet:', encodeError);
+      } else {
+        return encodedResult;
+      }
     }
+    
+    // Return a minimal valid DNS response as last resort
+    console.warn('Unable to convert packet to buffer, returning minimal SERVFAIL response');
+    return require('dns-packet').encode({
+      id: 0,
+      type: 'response',
+      flags: 384,
+      questions: [],
+      answers: [],
+      rcode: 2 // SERVFAIL
+    });
+  }
+  
+  private hasToBufferMethod(obj: unknown): obj is { toBuffer(): unknown } {
+    return typeof obj === 'object' && obj !== null && 'toBuffer' in obj && typeof (obj as any).toBuffer === 'function';
+  }
+  
+  private isDnsPacketLike(obj: unknown): obj is { header?: { id?: number; qr?: boolean; rcode?: number }; questions?: unknown[]; answers?: unknown[] } {
+    return typeof obj === 'object' && obj !== null;
   }
 
 }

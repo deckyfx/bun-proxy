@@ -1,7 +1,8 @@
 import { sseResponder } from '@src/utils/SSEResponder';
+import { trySync } from '@src/utils/try';
 
 async function GET(): Promise<Response> {
-  try {
+  const [result, error] = trySync(() => {
     // Send a test message to all connected clients
     sseResponder.emit('dns/log/event', {
       type: 'request',
@@ -16,21 +17,25 @@ async function GET(): Promise<Response> {
     // Send test messages for different channels
     sseResponder.emitDNSStatus({
       enabled: true,
-      server: { port: 53, status: 'running' }
+      server: {
+        isRunning: true,
+        port: 53,
+        providers: ['cloudflare']
+      }
     });
 
     sseResponder.emitDNSLogContent({
-      success: true,
-      content: [
+      driver: 'console',
+      count: 1,
+      lastUpdated: Date.now(),
+      entries: [
         {
           type: 'server_event',
           timestamp: new Date(),
           eventType: 'test',
           message: 'Test log entry from API'
         }
-      ],
-      driver: 'test',
-      timestamp: Date.now()
+      ]
     });
 
     const stats = sseResponder.getStats();
@@ -43,15 +48,19 @@ async function GET(): Promise<Response> {
       status: 200,
       headers: { 'Content-Type': 'application/json' }
     });
-  } catch (error) {
+  });
+
+  if (error) {
     return new Response(JSON.stringify({
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error'
+      error: error.message
     }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' }
     });
   }
+
+  return result;
 }
 
 export { GET };

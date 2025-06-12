@@ -1,6 +1,14 @@
 import { dnsManager } from "@src/dns/manager";
 import { Auth, type AuthUser } from "@utils/auth";
-import { DRIVER_TYPES, DRIVER_METHODS, type DriverConfig, type DriverContentResponse } from "@src/types/driver";
+import { 
+  DRIVER_TYPES, 
+  DRIVER_METHODS, 
+  type DriverConfig, 
+  type DriverListResponse, 
+  type DriverCheckResponse, 
+  type DriverActionResponse, 
+  type DriverErrorResponse 
+} from "@src/types/driver";
 import { dnsEventService } from "@src/dns/DNSEventService";
 import { 
   createCacheDriverInstance, 
@@ -8,66 +16,80 @@ import {
   isServerRunning, 
   createErrorResponse, 
   createSuccessResponse, 
-  checkServerAvailability 
+  checkServerAvailability,
+  getDriverName
 } from "./utils";
+import { trySync, tryAsync } from "@src/utils/try";
 
 // GET /api/dns/cache - Get cache driver configuration
 export async function GetCacheDriverInfo(_req: Request, _user: AuthUser): Promise<Response> {
-  try {
+  const [result, error] = trySync(() => {
     const drivers = getDrivers();
     const serverRunning = isServerRunning();
 
     const response = {
       current: {
         type: DRIVER_TYPES.CACHE,
-        implementation: drivers.cache?.constructor.DRIVER_NAME || 'inmemory',
+        implementation: getDriverName(drivers.cache),
         status: serverRunning ? 'active' : 'inactive'
       },
       available: ['inmemory', 'file', 'sqlite']
     };
 
     return createSuccessResponse(response);
-  } catch (error) {
+  });
+
+  if (error) {
     return createErrorResponse(
       'Failed to get cache driver configuration',
-      error instanceof Error ? error.message : 'Unknown error'
+      error.message
     );
   }
+
+  return result;
 }
 
 // POST /api/dns/cache - Handle cache driver operations
 export async function HandleCacheDriverOperation(req: Request, _user: AuthUser): Promise<Response> {
-  try {
-    const body = await req.json() as DriverConfig;
+  const [result, error] = await tryAsync(async () => {
+    const [body, parseError] = await tryAsync(() => req.json());
+    if (parseError) {
+      return createErrorResponse('Invalid JSON', parseError.message, 400);
+    }
     
-    if (!body.method) {
+    const config = body as DriverConfig;
+    if (!config.method) {
       return createErrorResponse('Missing required field', 'method is required', 400);
     }
 
-    const config = { ...body, scope: DRIVER_TYPES.CACHE };
+    const configWithScope = { ...config, scope: DRIVER_TYPES.CACHE };
 
-    switch (config.method) {
+    switch (configWithScope.method) {
       case DRIVER_METHODS.SET:
-        return await setCacheDriver(config);
+        return await setCacheDriver(configWithScope);
       case DRIVER_METHODS.GET:
-        return await getCacheDriverContent(config);
+        return await getCacheDriverContent(configWithScope);
       case DRIVER_METHODS.CLEAR:
-        return await clearCacheDriver(config);
+        return await clearCacheDriver(configWithScope);
       case DRIVER_METHODS.ADD:
-        return await addCacheEntry(config);
+        return await addCacheEntry(configWithScope);
       case DRIVER_METHODS.REMOVE:
-        return await removeCacheEntry(config);
+        return await removeCacheEntry(configWithScope);
       case DRIVER_METHODS.UPDATE:
-        return await updateCacheEntry(config);
+        return await updateCacheEntry(configWithScope);
       default:
         return createErrorResponse('Invalid method', 'method must be SET, GET, CLEAR, ADD, REMOVE, or UPDATE', 400);
     }
-  } catch (error) {
+  });
+
+  if (error) {
     return createErrorResponse(
       'Failed to process cache driver operation',
-      error instanceof Error ? error.message : 'Unknown error'
+      error.message
     );
   }
+
+  return result;
 }
 
 async function setCacheDriver(config: DriverConfig): Promise<Response> {
@@ -75,8 +97,8 @@ async function setCacheDriver(config: DriverConfig): Promise<Response> {
     return createErrorResponse('Missing driver field', 'driver field is required for SET method', 400);
   }
 
-  try {
-    const newDriverInstance = createCacheDriverInstance(config.driver, config.options);
+  const [result, error] = await tryAsync(async () => {
+    const newDriverInstance = createCacheDriverInstance(config.driver!, config.options);
     const currentDrivers = dnsManager.getLastUsedDrivers();
     
     const updatedDrivers = { ...currentDrivers, cache: newDriverInstance };
@@ -92,85 +114,110 @@ async function setCacheDriver(config: DriverConfig): Promise<Response> {
       options: config.options,
       serverRunning: status.enabled
     });
-  } catch (error) {
+  });
+
+  if (error) {
     return createErrorResponse(
       'Failed to set cache driver',
-      error instanceof Error ? error.message : 'Unknown error'
+      error.message
     );
   }
+
+  return result;
 }
 
 async function getCacheDriverContent(config: DriverConfig): Promise<Response> {
   const serverError = checkServerAvailability();
   if (serverError) return serverError;
 
-  try {
+  const [result, error] = await tryAsync(async () => {
     const drivers = getDrivers();
     const cacheDriver = drivers.cache;
-    let content: any = null;
     
-    if (cacheDriver) {
-      if (config.key) {
-        // Get specific entry
-        content = await cacheDriver.get(config.key);
-      } else {
-        // Get all entries
-        const keys = await cacheDriver.keys();
-        const entries = await Promise.all(
-          keys.map(async (key: string) => ({
-            key,
-            value: await cacheDriver.get(key)
-          }))
-        );
-        
-        // Apply filtering if specified
-        let filtered = entries.filter(entry => entry.value !== null);
-        
-        if (config.filter) {
-          if (config.filter.key) {
-            filtered = filtered.filter(entry => 
-              entry.key.toLowerCase().includes(config.filter!.key.toLowerCase())
-            );
-          }
-        }
-        
-        content = filtered;
-      }
-    } else {
-      content = 'Cache driver not available';
+    if (!cacheDriver) {
+      const errorResponse: DriverErrorResponse = {
+        success: false,
+        scope: config.scope,
+        driver: getDriverName(drivers.cache),
+        error: 'Cache driver not available',
+        timestamp: Date.now()
+      };
+      return new Response(JSON.stringify(errorResponse), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      });
     }
 
-    const response: DriverContentResponse = {
-      success: true,
-      scope: config.scope,
-      driver: drivers.cache?.constructor.DRIVER_NAME || 'unknown',
-      content,
-      metadata: {
-        total: Array.isArray(content) ? content.length : 0,
-        timestamp: new Date().toISOString()
+    if (config.key) {
+      // Check specific entry
+      const exists = await cacheDriver.has(config.key!);
+      const checkResponse: DriverCheckResponse = {
+        success: true,
+        scope: config.scope,
+        driver: getDriverName(drivers.cache),
+        exists,
+        key: config.key,
+        timestamp: Date.now()
+      };
+      return createSuccessResponse(checkResponse);
+    } else {
+      // Get all entries with their keys
+      const keys = await cacheDriver.keys();
+      const cacheEntries = await Promise.all(
+        keys.map(async (key: string) => {
+          const value = await cacheDriver.get(key);
+          return value ? { key, ...value } : null; // Add key to the CachedDnsResponse
+        })
+      );
+      
+      // Filter out null entries and apply additional filtering
+      let filteredEntries = cacheEntries.filter(entry => entry !== null);
+      
+      if (config.filter && config.filter.key) {
+        filteredEntries = filteredEntries.filter(entry => 
+          entry && entry.packet && entry.packet.questions && entry.packet.questions.length > 0 &&
+          entry.packet.questions[0]!.name.toLowerCase().includes(config.filter!.key.toLowerCase())
+        );
       }
-    };
+      
+      const listResponse: DriverListResponse = {
+        success: true,
+        scope: config.scope,
+        driver: getDriverName(drivers.cache),
+        entries: filteredEntries,
+        timestamp: Date.now(),
+        metadata: {
+          total: filteredEntries.length,
+          filtered: config.filter ? filteredEntries.length : undefined,
+          timestamp: new Date().toISOString()
+        }
+      };
+      return createSuccessResponse(listResponse);
+    }
+  });
 
-    return createSuccessResponse(response);
-  } catch (error) {
-    const response: DriverContentResponse = {
+  if (error) {
+    const errorResponse: DriverErrorResponse = {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      scope: config.scope,
+      error: error.message,
       timestamp: Date.now()
     };
     
-    return new Response(JSON.stringify(response), {
+    return new Response(JSON.stringify(errorResponse), {
       status: 500,
       headers: { 'Content-Type': 'application/json' }
     });
   }
+
+  return result;
 }
 
 async function clearCacheDriver(config: DriverConfig): Promise<Response> {
   const serverError = checkServerAvailability();
   if (serverError) return serverError;
 
-  try {
+  const [result, error] = await tryAsync(async () => {
     const drivers = getDrivers();
     const cacheDriver = drivers.cache;
     let cleared = false;
@@ -187,19 +234,24 @@ async function clearCacheDriver(config: DriverConfig): Promise<Response> {
       message = 'Cache driver does not support clearing';
     }
 
-    return createSuccessResponse({
+    const actionResponse: DriverActionResponse = {
       success: cleared,
-      message,
       scope: config.scope,
-      driver: drivers.cache?.constructor.DRIVER_NAME || 'unknown',
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
+      driver: getDriverName(drivers.cache),
+      message,
+      timestamp: Date.now()
+    };
+    return createSuccessResponse(actionResponse);
+  });
+
+  if (error) {
     return createErrorResponse(
       'Failed to clear cache driver',
-      error instanceof Error ? error.message : 'Unknown error'
+      error.message
     );
   }
+
+  return result;
 }
 
 async function addCacheEntry(config: DriverConfig): Promise<Response> {
@@ -210,7 +262,7 @@ async function addCacheEntry(config: DriverConfig): Promise<Response> {
     return createErrorResponse('Missing required fields', 'key and value are required for ADD method', 400);
   }
 
-  try {
+  const [result, error] = await tryAsync(async () => {
     const drivers = getDrivers();
     const cacheDriver = drivers.cache;
 
@@ -218,24 +270,29 @@ async function addCacheEntry(config: DriverConfig): Promise<Response> {
       return createErrorResponse('Cache driver not available', 'Cache driver does not support adding entries');
     }
 
-    await cacheDriver.set(config.key, config.value, config.ttl);
+    await cacheDriver.set(config.key!, config.value, config.ttl);
 
     // Emit SSE event for cache update
     dnsEventService.refreshDriverContent(DRIVER_TYPES.CACHE);
 
-    return createSuccessResponse({
+    const actionResponse: DriverActionResponse = {
+      success: true,
+      scope: config.scope,
+      driver: getDriverName(drivers.cache),
       message: `Cache entry added successfully`,
-      key: config.key,
-      value: config.value,
-      ttl: config.ttl,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
+      timestamp: Date.now()
+    };
+    return createSuccessResponse(actionResponse);
+  });
+
+  if (error) {
     return createErrorResponse(
       'Failed to add cache entry',
-      error instanceof Error ? error.message : 'Unknown error'
+      error.message
     );
   }
+
+  return result;
 }
 
 async function removeCacheEntry(config: DriverConfig): Promise<Response> {
@@ -246,7 +303,7 @@ async function removeCacheEntry(config: DriverConfig): Promise<Response> {
     return createErrorResponse('Missing required field', 'key is required for REMOVE method', 400);
   }
 
-  try {
+  const [result, error] = await tryAsync(async () => {
     const drivers = getDrivers();
     const cacheDriver = drivers.cache;
 
@@ -254,25 +311,32 @@ async function removeCacheEntry(config: DriverConfig): Promise<Response> {
       return createErrorResponse('Cache driver not available', 'Cache driver does not support removing entries');
     }
 
-    const deleted = await cacheDriver.delete(config.key);
+    const deleted = await cacheDriver.delete(config.key!);
 
     // Emit SSE event for cache update if something was deleted
     if (deleted) {
       dnsEventService.refreshDriverContent(DRIVER_TYPES.CACHE);
     }
 
-    return createSuccessResponse({
+    const actionResponse: DriverActionResponse = {
+      success: true,
+      scope: config.scope,
+      driver: getDriverName(drivers.cache),
       message: deleted ? `Cache entry removed successfully` : `Cache entry not found`,
-      key: config.key,
-      deleted,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
+      timestamp: Date.now(),
+      affected: deleted ? 1 : 0
+    };
+    return createSuccessResponse(actionResponse);
+  });
+
+  if (error) {
     return createErrorResponse(
       'Failed to remove cache entry',
-      error instanceof Error ? error.message : 'Unknown error'
+      error.message
     );
   }
+
+  return result;
 }
 
 async function updateCacheEntry(config: DriverConfig): Promise<Response> {
@@ -283,7 +347,7 @@ async function updateCacheEntry(config: DriverConfig): Promise<Response> {
     return createErrorResponse('Missing required fields', 'key and value are required for UPDATE method', 400);
   }
 
-  try {
+  const [result, error] = await tryAsync(async () => {
     const drivers = getDrivers();
     const cacheDriver = drivers.cache;
 
@@ -291,29 +355,34 @@ async function updateCacheEntry(config: DriverConfig): Promise<Response> {
       return createErrorResponse('Cache driver not available', 'Cache driver does not support updating entries');
     }
 
-    const exists = await cacheDriver.has(config.key);
+    const exists = await cacheDriver.has(config.key!);
     if (!exists) {
       return createErrorResponse('Entry not found', `Cache entry with key '${config.key}' does not exist`, 404);
     }
 
-    await cacheDriver.set(config.key, config.value, config.ttl);
+    await cacheDriver.set(config.key!, config.value, config.ttl);
 
     // Emit SSE event for cache update
     dnsEventService.refreshDriverContent(DRIVER_TYPES.CACHE);
 
-    return createSuccessResponse({
+    const actionResponse: DriverActionResponse = {
+      success: true,
+      scope: config.scope,
+      driver: getDriverName(drivers.cache),
       message: `Cache entry updated successfully`,
-      key: config.key,
-      value: config.value,
-      ttl: config.ttl,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
+      timestamp: Date.now()
+    };
+    return createSuccessResponse(actionResponse);
+  });
+
+  if (error) {
     return createErrorResponse(
       'Failed to update cache entry',
-      error instanceof Error ? error.message : 'Unknown error'
+      error.message
     );
   }
+
+  return result;
 }
 
 export default {

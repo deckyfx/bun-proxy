@@ -1,8 +1,37 @@
 import { create } from 'zustand';
-import type { DNSStatus, DNSConfigResponse, DNSToggleResponse } from '@typed/dns';
+import type { DnsServerStatus } from '@src/types/dns-unified';
 import { useSnackbarStore } from './snackbarStore';
-import { sseClient } from '@src/utils/SSEClient';
+import { sseClient, type DNSStatusMessage } from '@src/utils/SSEClient';
 import { api } from '@app/utils/fetchUtils';
+import { tryAsync } from '@src/utils/try';
+
+interface DNSStatus {
+  enabled: boolean;
+  isRunning: boolean;
+  port: number;
+  nextdnsConfigId?: string;
+  canUseLowPorts: boolean;
+  platform: string;
+  isPrivilegedPort: boolean;
+  enableWhitelist: boolean;
+  secondaryDns: 'cloudflare' | 'google' | 'opendns';
+  server?: {
+    port: number;
+    providers: string[];
+  };
+  providers: string[];
+}
+
+interface DNSConfigResponse {
+  config: DNSStatus;
+}
+
+interface DNSToggleResponse {
+  isRunning: boolean;
+  port?: number;
+  error?: string;
+  status?: DNSStatus;
+}
 
 interface DNSConfig {
   port: number;
@@ -49,7 +78,14 @@ export const useDNSStore = create<DNSStore>((set, get) => ({
   // Initial state
   status: {
     enabled: false,
-    server: null,
+    isRunning: false,
+    port: 53,
+    canUseLowPorts: false,
+    platform: 'unknown',
+    isPrivilegedPort: true,
+    enableWhitelist: false,
+    secondaryDns: 'cloudflare' as const,
+    providers: [],
   },
   config: {
     port: 53,
@@ -69,87 +105,102 @@ export const useDNSStore = create<DNSStore>((set, get) => ({
 
   // Actions
   fetchStatus: async () => {
-    try {
-      const data: DNSStatus = await api.get('/api/dns/status');
-      set({ status: data });
-    } catch (error) {
+    const [data, error] = await tryAsync(() => api.get('/api/dns/status'));
+    
+    if (error) {
       console.error('Failed to fetch DNS status:', error);
+    } else {
+      set({ status: data as DNSStatus });
     }
   },
 
   fetchConfig: async () => {
-    try {
-      const data: DNSConfigResponse = await api.get('/api/dns/config');
-      set({ config: data.config });
-    } catch (error) {
+    const [data, error] = await tryAsync(() => api.get('/api/dns/config'));
+    
+    if (error) {
       console.error('Failed to fetch DNS config:', error);
+    } else {
+      set({ config: (data as DNSConfigResponse).config });
     }
   },
 
   startServer: async (options) => {
     set({ loading: true });
-    try {
-      const data: DNSToggleResponse = await api.post('/api/dns/start', options, {
-        showSuccess: true,
-        successMessage: 'DNS server started successfully'
-      });
-      set({ status: data.status });
-    } catch (error) {
+    
+    const [data, error] = await tryAsync(() => api.post('/api/dns/start', options, {
+      showSuccess: true,
+      successMessage: 'DNS server started successfully'
+    }));
+    
+    if (error) {
       console.error('Failed to start DNS server:', error);
       // Don't re-throw to prevent uncaught errors
-    } finally {
-      set({ loading: false });
+    } else {
+      if ((data as DNSToggleResponse).status) {
+        set({ status: (data as DNSToggleResponse).status! });
+      }
     }
+    
+    set({ loading: false });
   },
 
   stopServer: async () => {
     set({ loading: true });
-    try {
-      const data: DNSToggleResponse = await api.post('/api/dns/stop', undefined, {
-        showSuccess: true,
-        successMessage: 'DNS server stopped successfully'
-      });
-      set({ status: data.status });
-    } catch (error) {
+    
+    const [data, error] = await tryAsync(() => api.post('/api/dns/stop', undefined, {
+      showSuccess: true,
+      successMessage: 'DNS server stopped successfully'
+    }));
+    
+    if (error) {
       console.error('Failed to stop DNS server:', error);
       // Don't re-throw to prevent uncaught errors
-    } finally {
-      set({ loading: false });
+    } else {
+      if ((data as DNSToggleResponse).status) {
+        set({ status: (data as DNSToggleResponse).status! });
+      }
     }
+    
+    set({ loading: false });
   },
 
   toggleServer: async () => {
     set({ loading: true });
-    try {
-      const data: DNSToggleResponse = await api.post('/api/dns/toggle', undefined, {
-        showSuccess: true,
-        successMessage: 'DNS server toggled successfully'
-      });
-      set({ status: data.status });
-    } catch (error) {
+    
+    const [data, error] = await tryAsync(() => api.post('/api/dns/toggle', undefined, {
+      showSuccess: true,
+      successMessage: 'DNS server toggled successfully'
+    }));
+    
+    if (error) {
       console.error('Failed to toggle DNS server:', error);
       // Don't re-throw to prevent uncaught errors
-    } finally {
-      set({ loading: false });
+    } else {
+      if ((data as DNSToggleResponse).status) {
+        set({ status: (data as DNSToggleResponse).status! });
+      }
     }
+    
+    set({ loading: false });
   },
 
   testDnsConfig: async (configId: string) => {
     set({ testLoading: true, testResult: '' });
     
-    try {
-      const data = await api.post('/api/dns/test', {
-        domain: 'google.com',
-        configId,
-      });
-      set({ testResult: `✅ Success: ${data.result || 'DNS resolution working'}` });
-    } catch (error) {
+    const [data, error] = await tryAsync(() => api.post('/api/dns/test', {
+      domain: 'google.com',
+      configId,
+    }));
+    
+    if (error) {
       set({ 
-        testResult: `❌ Error: ${error instanceof Error ? error.message : 'Test failed'}` 
+        testResult: `❌ Error: ${error.message || 'Test failed'}` 
       });
-    } finally {
-      set({ testLoading: false });
+    } else {
+      set({ testResult: `✅ Success: ${(data as any).result || 'DNS resolution working'}` });
     }
+    
+    set({ testLoading: false });
   },
 
   updateConfig: (updates) => {
@@ -164,15 +215,32 @@ export const useDNSStore = create<DNSStore>((set, get) => ({
 
     // Subscribe to DNS status updates (server start/stop)
     const statusUnsubscriber = sseClient.subscribe('dns/status', (data) => {
-      if (data) {
-        set({ status: data });
+      if (data && 'enabled' in data) {
+        const statusMessage = data as DNSStatusMessage;
+        const status: DNSStatus = {
+          enabled: statusMessage.enabled,
+          isRunning: statusMessage.server?.isRunning || false,
+          port: statusMessage.server?.port || 53,
+          canUseLowPorts: false,
+          platform: 'unknown',
+          isPrivilegedPort: (statusMessage.server?.port || 53) < 1024,
+          enableWhitelist: false,
+          secondaryDns: 'cloudflare' as const,
+          providers: statusMessage.server?.providers || [],
+          server: statusMessage.server ? {
+            port: statusMessage.server.port,
+            providers: statusMessage.server.providers || []
+          } : undefined
+        };
+        set({ status });
       }
     });
 
     // Subscribe to DNS info updates (config changes)
     const infoUnsubscriber = sseClient.subscribe('dns/info', (data) => {
-      if (data && data.config) {
-        set({ config: data.config });
+      if (data && 'config' in data) {
+        const configData = data as { config: DNSConfig };
+        set({ config: configData.config });
       }
     });
 

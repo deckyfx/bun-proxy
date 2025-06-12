@@ -1,9 +1,10 @@
-import { BaseDriver, type CacheOptions } from './BaseDriver';
-import { DnsCache } from '@src/models/DnsCache';
+import { BaseDriver, type CacheOptions } from "./BaseDriver";
+import { DnsCache } from "@src/models/DnsCache";
+import type { CachedDnsResponse } from "@src/types/dns-unified";
 
-export class SQLiteDriver<T = any> extends BaseDriver<T> {
-  static readonly DRIVER_NAME = 'sqlite';
-  
+export class SQLiteDriver extends BaseDriver {
+  static override readonly DRIVER_NAME = "sqlite";
+
   private cleanupTimer?: Timer;
 
   constructor(options: CacheOptions = {}) {
@@ -15,8 +16,8 @@ export class SQLiteDriver<T = any> extends BaseDriver<T> {
     // Drizzle handles initialization
   }
 
-  async get(key: string): Promise<T | null> {
-    const result = await DnsCache.get<T>(key);
+  async get(key: string): Promise<CachedDnsResponse | null> {
+    const result = await DnsCache.get(key);
     if (result) {
       this.recordHit();
       return result;
@@ -26,9 +27,19 @@ export class SQLiteDriver<T = any> extends BaseDriver<T> {
     }
   }
 
-  async set(key: string, value: T, ttl?: number): Promise<void> {
-    const effectiveTtl = ttl || this.options.defaultTtl!;
-    await DnsCache.set(key, value, effectiveTtl);
+  async set(
+    key: string,
+    value: CachedDnsResponse,
+    ttl?: number
+  ): Promise<void> {
+    // Use the TTL from the CachedDnsResponse or override with provided TTL
+    if (ttl !== undefined) {
+      const now = Date.now();
+      value.cache.ttl = ttl;
+      value.cache.expiresAt = now + ttl;
+    }
+
+    await DnsCache.set(key, value, value.cache.ttl);
 
     // Check if we need to evict entries
     const sizeResult = await this.size();

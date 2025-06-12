@@ -1,12 +1,13 @@
 import { create } from 'zustand';
-import { DRIVER_METHODS, type DriverConfig, type DriverContentResponse } from '@src/types/driver';
+import { DRIVER_METHODS, type DriverConfig, type DriverContentResponse, type DriverStatus } from '@src/types/driver';
 import { api } from '@app/utils/fetchUtils';
-import { sseClient } from '@src/utils/SSEClient';
+import { sseClient, type DNSContentMessage } from '@src/utils/SSEClient';
 import { useSnackbarStore } from './snackbarStore';
+import { tryAsync } from '@src/utils/try';
 
 interface DnsBlacklistStore {
   // State
-  driverInfo: { current: any; available: string[] } | null;
+  driverInfo: { current: DriverStatus; available: string[] } | null;
   content: DriverContentResponse | null;
   loading: boolean;
   contentLoading: boolean;
@@ -15,8 +16,8 @@ interface DnsBlacklistStore {
   
   // Actions
   fetchDriverInfo: () => Promise<void>;
-  getContent: (filter?: Record<string, any>) => Promise<void>;
-  setDriver: (driver: string, options?: Record<string, any>) => Promise<void>;
+  getContent: (filter?: Record<string, unknown>) => Promise<void>;
+  setDriver: (driver: string, options?: Record<string, unknown>) => Promise<void>;
   clearContent: () => Promise<void>;
   addEntry: (domain: string, reason?: string, category?: string) => Promise<boolean>;
   removeEntry: (domain: string) => Promise<boolean>;
@@ -41,145 +42,153 @@ export const useDnsBlacklistStore = create<DnsBlacklistStore>((set, get) => ({
   fetchDriverInfo: async () => {
     set({ loading: true, error: null });
     
-    try {
-      const data = await api.get('/api/dns/blacklist');
-      set({ driverInfo: data });
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch blacklist driver info';
+    const [data, error] = await tryAsync(() => api.get('/api/dns/blacklist'));
+    
+    if (error) {
+      const errorMessage = error.message || 'Failed to fetch blacklist driver info';
       set({ error: errorMessage });
       console.error('Failed to fetch blacklist driver info:', error);
-    } finally {
-      set({ loading: false });
+    } else {
+      set({ driverInfo: data });
     }
+    
+    set({ loading: false });
   },
 
-  getContent: async (filter?: Record<string, any>) => {
+  getContent: async (filter?: Record<string, unknown>) => {
     set({ contentLoading: true, error: null });
     
-    try {
-      const config: Partial<DriverConfig> = {
-        method: DRIVER_METHODS.GET,
-        filter
-      };
+    const config: Partial<DriverConfig> = {
+      method: DRIVER_METHODS.GET,
+      filter
+    };
 
-      const data: DriverContentResponse = await api.post('/api/dns/blacklist', config);
-      set({ content: data });
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to get blacklist content';
+    const [data, error] = await tryAsync(() => api.post('/api/dns/blacklist', config));
+    
+    if (error) {
+      const errorMessage = error.message || 'Failed to get blacklist content';
       set({ error: errorMessage });
       console.error('Failed to get blacklist content:', error);
-    } finally {
-      set({ contentLoading: false });
+    } else {
+      set({ content: data as DriverContentResponse });
     }
+    
+    set({ contentLoading: false });
   },
 
-  setDriver: async (driver: string, options?: Record<string, any>) => {
+  setDriver: async (driver: string, options?: Record<string, unknown>) => {
     set({ loading: true, error: null });
     
-    try {
-      const config: Partial<DriverConfig> = {
-        method: DRIVER_METHODS.SET,
-        driver,
-        options
-      };
+    const config: Partial<DriverConfig> = {
+      method: DRIVER_METHODS.SET,
+      driver,
+      options
+    };
 
-      await api.post<void, Partial<DriverConfig>>('/api/dns/blacklist', config, {
-        showSuccess: true,
-        successMessage: 'Blacklist driver updated successfully'
-      });
-      
-      // Refresh driver info after successful change
-      await get().fetchDriverInfo();
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to set blacklist driver';
+    const [, error] = await tryAsync(() => api.post<void, Partial<DriverConfig>>('/api/dns/blacklist', config, {
+      showSuccess: true,
+      successMessage: 'Blacklist driver updated successfully'
+    }));
+    
+    if (error) {
+      const errorMessage = error.message || 'Failed to set blacklist driver';
       set({ error: errorMessage });
       console.error('Failed to set blacklist driver:', error);
-    } finally {
-      set({ loading: false });
+    } else {
+      // Refresh driver info after successful change
+      await get().fetchDriverInfo();
     }
+    
+    set({ loading: false });
   },
 
   clearContent: async () => {
     set({ loading: true, error: null });
     
-    try {
-      const config: Partial<DriverConfig> = {
-        method: DRIVER_METHODS.CLEAR
-      };
+    const config: Partial<DriverConfig> = {
+      method: DRIVER_METHODS.CLEAR
+    };
 
-      await api.post('/api/dns/blacklist', config, {
-        showSuccess: true,
-        successMessage: 'Blacklist cleared successfully'
-      });
-      
-      // Clear the content in the store after successful API call
-      set({ content: null });
-      
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to clear blacklist';
+    const [, error] = await tryAsync(() => api.post('/api/dns/blacklist', config, {
+      showSuccess: true,
+      successMessage: 'Blacklist cleared successfully'
+    }));
+    
+    if (error) {
+      const errorMessage = error.message || 'Failed to clear blacklist';
       set({ error: errorMessage });
       console.error('Failed to clear blacklist:', error);
-    } finally {
-      set({ loading: false });
+    } else {
+      // Clear the content in the store after successful API call
+      set({ content: null });
     }
+    
+    set({ loading: false });
   },
 
   addEntry: async (domain: string, reason?: string, category?: string) => {
-    try {
-      // First check if entry already exists
-      const checkConfig: Partial<DriverConfig> = {
-        method: DRIVER_METHODS.GET,
-        key: domain
-      };
+    // First check if entry already exists
+    const checkConfig: Partial<DriverConfig> = {
+      method: DRIVER_METHODS.GET,
+      key: domain
+    };
 
-      const checkResult = await api.post('/api/dns/blacklist', checkConfig);
-      if (checkResult.content === true) {
-        useSnackbarStore.getState().showAlert(`Domain "${domain}" is already in blacklist`, "Duplicate Entry");
-        return false;
-      }
-
-      // Add the entry
-      const addConfig: Partial<DriverConfig> = {
-        method: DRIVER_METHODS.ADD,
-        key: domain,
-        reason: reason || 'Added from DNS logs',
-        category: category || 'logs'
-      };
-
-      await api.post('/api/dns/blacklist', addConfig, {
-        showSuccess: true,
-        successMessage: `Added "${domain}" to blacklist`
-      });
-      
-      // Immediately refresh content to ensure UI updates
-      await get().getContent();
-      
-      return true;
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to add blacklist entry';
+    const [checkResult, checkError] = await tryAsync(() => api.post('/api/dns/blacklist', checkConfig));
+    
+    if (checkError) {
+      const errorMessage = checkError.message || 'Failed to add blacklist entry';
       useSnackbarStore.getState().showAlert(errorMessage, "Blacklist Error");
       return false;
     }
+    
+    if ('exists' in checkResult && checkResult.exists === true) {
+      useSnackbarStore.getState().showAlert(`Domain "${domain}" is already in blacklist`, "Duplicate Entry");
+      return false;
+    }
+
+    // Add the entry
+    const addConfig: Partial<DriverConfig> = {
+      method: DRIVER_METHODS.ADD,
+      key: domain,
+      reason: reason || 'Added from DNS logs',
+      category: category || 'logs'
+    };
+
+    const [, addError] = await tryAsync(() => api.post('/api/dns/blacklist', addConfig, {
+      showSuccess: true,
+      successMessage: `Added "${domain}" to blacklist`
+    }));
+    
+    if (addError) {
+      const errorMessage = addError.message || 'Failed to add blacklist entry';
+      useSnackbarStore.getState().showAlert(errorMessage, "Blacklist Error");
+      return false;
+    }
+    
+    // Immediately refresh content to ensure UI updates
+    await get().getContent();
+    
+    return true;
   },
 
   removeEntry: async (domain: string) => {
-    try {
-      const config: Partial<DriverConfig> = {
-        method: DRIVER_METHODS.REMOVE,
-        key: domain
-      };
+    const config: Partial<DriverConfig> = {
+      method: DRIVER_METHODS.REMOVE,
+      key: domain
+    };
 
-      await api.post('/api/dns/blacklist', config, {
-        showSuccess: true,
-        successMessage: `Removed "${domain}" from blacklist`
-      });
-      
-      return true;
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to remove blacklist entry';
+    const [, error] = await tryAsync(() => api.post('/api/dns/blacklist', config, {
+      showSuccess: true,
+      successMessage: `Removed "${domain}" from blacklist`
+    }));
+    
+    if (error) {
+      const errorMessage = error.message || 'Failed to remove blacklist entry';
       useSnackbarStore.getState().showAlert(errorMessage, "Blacklist Error");
       return false;
     }
+    
+    return true;
   },
 
   clearError: () => {
@@ -192,8 +201,20 @@ export const useDnsBlacklistStore = create<DnsBlacklistStore>((set, get) => ({
 
     // Subscribe to blacklist content updates
     const contentUnsubscriber = sseClient.subscribe('dns/blacklist/', (blacklistData) => {
-      if (blacklistData) {
-        set({ content: blacklistData });
+      if (blacklistData && 'driver' in blacklistData) {
+        const contentMessage = blacklistData as DNSContentMessage;
+        const content: DriverContentResponse = {
+          success: true,
+          scope: 'blacklist',
+          driver: contentMessage.driver,
+          entries: contentMessage.entries || [],
+          timestamp: contentMessage.lastUpdated,
+          metadata: {
+            total: contentMessage.count,
+            timestamp: new Date(contentMessage.lastUpdated).toISOString()
+          }
+        };
+        set({ content });
       }
     });
 

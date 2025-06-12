@@ -1,11 +1,11 @@
 import { Button, Select, Table, type TableColumn } from "@app/components/index";
-import type { LogEntry } from "@src/dns/drivers/logs/BaseDriver";
+import type { LogEntry } from "@src/types/dns-unified";
 
 interface LogsHistoryTabProps {
   content: LogEntry[] | null;
   loading: boolean;
   error: string | null;
-  currentDriver: any;
+  currentDriver: { implementation: string; status: string; } | null;
   tableColumns: TableColumn<LogEntry>[];
   filters: {
     type: string;
@@ -15,7 +15,7 @@ interface LogsHistoryTabProps {
     success: string;
     limit: number;
   };
-  onFiltersChange: (filters: any) => void;
+  onFiltersChange: (filters: { type?: string; level?: string; domain?: string; provider?: string; success?: string; limit?: number; }) => void;
   onClearFilters: () => void;
   onFetchHistory: () => void;
   onRowClick: (log: LogEntry) => void;
@@ -76,7 +76,7 @@ export default function LogsHistoryTab({
           <Select
             label="Type"
             value={filters.type}
-            onChange={(value) => onFiltersChange((prev: any) => ({ ...prev, type: value }))}
+            onChange={(value) => onFiltersChange({ type: value })}
             options={[
               { value: "", label: "All Types" },
               { value: "request", label: "Request" },
@@ -87,7 +87,7 @@ export default function LogsHistoryTab({
           <Select
             label="Level"
             value={filters.level}
-            onChange={(value) => onFiltersChange((prev: any) => ({ ...prev, level: value }))}
+            onChange={(value) => onFiltersChange({ level: value })}
             options={[
               { value: "", label: "All Levels" },
               { value: "info", label: "Info" },
@@ -98,7 +98,7 @@ export default function LogsHistoryTab({
           <Select
             label="Domain"
             value={filters.domain}
-            onChange={(value) => onFiltersChange((prev: any) => ({ ...prev, domain: value }))}
+            onChange={(value) => onFiltersChange({ domain: value })}
             options={[
               { value: "", label: "All Domains" },
               { value: "google.com", label: "google.com" },
@@ -108,7 +108,7 @@ export default function LogsHistoryTab({
           <Select
             label="Provider"
             value={filters.provider}
-            onChange={(value) => onFiltersChange((prev: any) => ({ ...prev, provider: value }))}
+            onChange={(value) => onFiltersChange({ provider: value })}
             options={[
               { value: "", label: "All Providers" },
               { value: "cloudflare", label: "Cloudflare" },
@@ -120,7 +120,7 @@ export default function LogsHistoryTab({
           <Select
             label="Success"
             value={filters.success}
-            onChange={(value) => onFiltersChange((prev: any) => ({ ...prev, success: value }))}
+            onChange={(value) => onFiltersChange({ success: value })}
             options={[
               { value: "", label: "All Results" },
               { value: "true", label: "Success" },
@@ -130,7 +130,7 @@ export default function LogsHistoryTab({
           <Select
             label="Limit"
             value={filters.limit.toString()}
-            onChange={(value) => onFiltersChange((prev: any) => ({ ...prev, limit: parseInt(value) }))}
+            onChange={(value) => onFiltersChange({ limit: parseInt(value) })}
             options={[
               { value: "50", label: "50 entries" },
               { value: "100", label: "100 entries" },
@@ -158,6 +158,7 @@ export default function LogsHistoryTab({
             : "No history available. Click Refresh to load logs from the current driver."
         }
         onRowClick={onRowClick}
+        getRowKey={(log, index) => `${log.id}-${log.timestamp}-${index}`}
       />
     </div>
   );

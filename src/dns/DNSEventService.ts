@@ -2,7 +2,9 @@ import { sseResponder } from '@src/utils/SSEResponder';
 import { dnsManager } from '@src/dns/manager';
 import { logEventEmitter } from '@src/dns/server';
 import { DRIVER_TYPES, type DriverType } from '@src/types/driver';
-import type { LogEntry } from '@src/dns/drivers/logs/BaseDriver';
+import type { LogEntry } from '@src/types/dns-unified';
+import type { DNSStatusMessage, DNSContentMessage } from '@utils/SSEClient';
+import { tryAsync } from '@src/utils/try';
 
 class DNSEventService {
   private static instance: DNSEventService;
@@ -40,21 +42,24 @@ class DNSEventService {
 
   // Handle real-time log events from DNS server
   private handleLogEvent(logEntry: LogEntry): void {
-    sseResponder.emitDNSLogEvent(logEntry);
+    // Type guard to only emit DNS log events, not server events
+    if (logEntry.type !== 'server_event') {
+      sseResponder.emitDNSLogEvent(logEntry);
+    }
   }
 
   // Emit DNS server status change (called by DNS manager)
-  emitStatusChange(status: any): void {
+  emitStatusChange(status: DNSStatusMessage): void {
     sseResponder.emitDNSStatus(status);
   }
 
   // Emit DNS configuration change (called when config updates)
-  emitConfigChange(config: any): void {
+  emitConfigChange(config: object): void {
     sseResponder.emitDNSInfo(config);
   }
 
   // Emit driver content updates (called when drivers change)
-  emitDriverContentUpdate(driverType: DriverType, content: any): void {
+  emitDriverContentUpdate(driverType: DriverType, content: DNSContentMessage): void {
     switch (driverType) {
       case DRIVER_TYPES.LOGS:
         sseResponder.emitDNSLogContent(content);
@@ -73,18 +78,28 @@ class DNSEventService {
 
   // Get current driver content and emit (for refresh operations)
   async refreshDriverContent(driverType: DriverType): Promise<void> {
-    try {
+    const [, error] = await tryAsync(async () => {
       const status = dnsManager.getStatus();
       
       if (!status.enabled || !status.server) {
         // Server not running - emit empty content
-        this.emitDriverContentUpdate(driverType, null);
+        this.emitDriverContentUpdate(driverType, {
+          driver: 'none',
+          count: 0,
+          lastUpdated: Date.now(),
+          entries: []
+        });
         return;
       }
 
       const serverInstance = dnsManager.getServerInstance();
       if (!serverInstance) {
-        this.emitDriverContentUpdate(driverType, null);
+        this.emitDriverContentUpdate(driverType, {
+          driver: 'none',
+          count: 0,
+          lastUpdated: Date.now(),
+          entries: []
+        });
         return;
       }
 
@@ -92,7 +107,12 @@ class DNSEventService {
       const driver = drivers[driverType];
       
       if (!driver) {
-        this.emitDriverContentUpdate(driverType, null);
+        this.emitDriverContentUpdate(driverType, {
+          driver: 'none',
+          count: 0,
+          lastUpdated: Date.now(),
+          entries: []
+        });
         return;
       }
 
@@ -122,18 +142,20 @@ class DNSEventService {
       }
 
       this.emitDriverContentUpdate(driverType, {
-        success: true,
-        content,
         driver: driver.constructor.DRIVER_NAME || 'unknown',
-        timestamp: Date.now()
-      });
+        count: Array.isArray(content) ? content.length : (content?.entries?.length || 0),
+        lastUpdated: Date.now(),
+        entries: content?.entries || content || []
+      } as DNSContentMessage);
+    });
 
-    } catch (error) {
+    if (error) {
       this.emitDriverContentUpdate(driverType, {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        timestamp: Date.now()
-      });
+        driver: 'unknown',
+        count: 0,
+        lastUpdated: Date.now(),
+        entries: []
+      } as DNSContentMessage);
     }
   }
 

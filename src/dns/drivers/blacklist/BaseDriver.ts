@@ -1,8 +1,8 @@
-export interface BlacklistEntry {
-  domain: string;
+import type { DnsBlacklistEntry } from '@src/types/dns-unified';
+
+// Re-export unified blacklist entry type with extended options
+export interface BlacklistEntry extends DnsBlacklistEntry {
   reason?: string;
-  addedAt: Date;
-  source: 'manual' | 'auto' | 'import';
   category?: string;
 }
 
@@ -21,6 +21,7 @@ export interface BlacklistStats {
 }
 
 export abstract class BaseDriver {
+  static readonly DRIVER_NAME: string = 'base';
   protected options: BlacklistOptions;
 
   constructor(options: BlacklistOptions = {}) {

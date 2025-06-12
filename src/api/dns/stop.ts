@@ -1,13 +1,15 @@
 import { dnsManager } from "@src/dns";
 import { Auth, type AuthUser } from "@utils/auth";
-import type { DNSActionResponse } from "@typed/dns";
+import type { DnsActionResponse } from "@src/types/api";
+import type { BunRequest } from "bun";
+import { tryAsync } from "@src/utils/try";
 
-export async function Stop(_req: any, _user: AuthUser): Promise<Response> {
-  try {
+export async function Stop(_req: BunRequest, _user: AuthUser): Promise<Response> {
+  const [result, error] = await tryAsync(async () => {
     await dnsManager.stop();
     const managerStatus = dnsManager.getStatus();
 
-    const response: DNSActionResponse = {
+    const response: DnsActionResponse = {
       message: "DNS server stopped successfully",
       status: {
         enabled: managerStatus.enabled,
@@ -19,12 +21,13 @@ export async function Stop(_req: any, _user: AuthUser): Promise<Response> {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
-  } catch (error) {
+  });
+
+  if (error) {
     console.error("DNS stop error:", error);
     return new Response(
       JSON.stringify({
-        error:
-          error instanceof Error ? error.message : "Failed to stop DNS server",
+        error: error.message,
       }),
       {
         status: 500,
@@ -32,6 +35,8 @@ export async function Stop(_req: any, _user: AuthUser): Promise<Response> {
       }
     );
   }
+
+  return result;
 }
 
 export default {

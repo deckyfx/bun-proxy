@@ -1,13 +1,15 @@
 import { dnsManager } from "@src/dns";
 import { dnsResolver } from "@src/dns/resolver";
 import { Auth, type AuthUser } from "@utils/auth";
+import type { DnsLogEntry, ServerEventLogEntry } from "@src/types/dns-unified";
+import { tryAsync } from "@src/utils/try";
 
 interface MetricsQuery {
   range: '1h' | '6h' | '24h' | '7d';
 }
 
 export async function GetMetrics(req: Request, _user: AuthUser): Promise<Response> {
-  try {
+  const [result, error] = await tryAsync(async () => {
     const url = new URL(req.url);
     const range = url.searchParams.get('range') as MetricsQuery['range'] || '1h';
     
@@ -93,39 +95,52 @@ export async function GetMetrics(req: Request, _user: AuthUser): Promise<Respons
 
     // Aggregate from logs driver if available
     if (drivers.logs) {
-      try {
-        const logEntries = await drivers.logs.getAllLogs();
+      const [logEntries, logError] = await tryAsync(() => drivers.logs!.getAllLogs());
+      if (logEntries) {
         
-        // Filter by time range
-        const relevantEntries = logEntries.filter((entry: any) => 
-          entry.timestamp >= fromTime
+        // Filter by time range and separate DNS entries from server events
+        const relevantDnsEntries = logEntries.filter((entry): entry is DnsLogEntry => 
+          entry.type !== 'server_event' && entry.timestamp >= fromTime.getTime()
         );
+        
+        // Extract server events separately
+        const relevantServerEvents = logEntries.filter((entry): entry is ServerEventLogEntry => 
+          entry.type === 'server_event' && entry.timestamp >= fromTime.getTime()
+        );
+        
+        // Add server events to the response
+        serverEvents.push(...relevantServerEvents.map(event => ({
+          type: event.eventType,
+          timestamp: new Date(event.timestamp),
+          message: event.message,
+          port: event.port,
+        })));
 
         // Track domain counts
         const domainCounts: Record<string, number> = {};
         let totalResponseTime = 0;
         let responseTimeCount = 0;
 
-        // Process each log entry
-        for (const entry of relevantEntries) {
+        // Process each DNS log entry
+        for (const entry of relevantDnsEntries) {
           if (entry.type === 'response') {
             queryMetrics.totalQueries++;
 
-            if (entry.success) {
+            if (entry.processing.success) {
               queryMetrics.successfulQueries++;
             } else {
               queryMetrics.failedQueries++;
             }
 
-            if (entry.cached) {
+            if (entry.processing.cached) {
               queryMetrics.cachedQueries++;
             }
 
-            if (entry.blocked) {
+            if (entry.processing.blocked) {
               queryMetrics.blockedQueries++;
             }
 
-            if (entry.whitelisted) {
+            if (entry.processing.whitelisted) {
               queryMetrics.whitelistedQueries++;
             }
 
@@ -136,18 +151,18 @@ export async function GetMetrics(req: Request, _user: AuthUser): Promise<Respons
             }
 
             // Track domains
-            if (entry.query?.domain) {
-              domainCounts[entry.query.domain] = 
-                (domainCounts[entry.query.domain] || 0) + 1;
+            if (entry.query?.name) {
+              domainCounts[entry.query.name] = 
+                (domainCounts[entry.query.name] || 0) + 1;
             }
 
             // Track providers
-            if (entry.provider) {
-              queryMetrics.topProviders[entry.provider] = 
-                (queryMetrics.topProviders[entry.provider] || 0) + 1;
+            if (entry.processing.provider) {
+              queryMetrics.topProviders[entry.processing.provider] = 
+                (queryMetrics.topProviders[entry.processing.provider] || 0) + 1;
 
-              if (!providerMetrics[entry.provider]) {
-                providerMetrics[entry.provider] = {
+              if (!providerMetrics[entry.processing.provider]) {
+                providerMetrics[entry.processing.provider] = {
                   totalQueries: 0,
                   successfulQueries: 0,
                   failedQueries: 0,
@@ -155,38 +170,39 @@ export async function GetMetrics(req: Request, _user: AuthUser): Promise<Respons
                 };
               }
 
-              const providerMetric = providerMetrics[entry.provider]!;
+              const providerMetric = providerMetrics[entry.processing.provider]!;
               providerMetric.totalQueries++;
-              providerMetric.lastUsed = entry.timestamp;
+              providerMetric.lastUsed = new Date(entry.timestamp);
 
-              if (entry.success) {
+              if (entry.processing.success) {
                 providerMetric.successfulQueries++;
               } else {
                 providerMetric.failedQueries++;
-                queryMetrics.errorsByProvider[entry.provider] = 
-                  (queryMetrics.errorsByProvider[entry.provider] || 0) + 1;
+                queryMetrics.errorsByProvider[entry.processing.provider] = 
+                  (queryMetrics.errorsByProvider[entry.processing.provider] || 0) + 1;
               }
 
               // Track response times
-              if (entry.responseTime && entry.responseTime > 0) {
-                totalResponseTime += entry.responseTime;
+              if (entry.processing.responseTime && entry.processing.responseTime > 0) {
+                totalResponseTime += entry.processing.responseTime;
                 responseTimeCount++;
                 
                 // Update provider response time
                 const totalProviderResponseTime = 
                   providerMetric.averageResponseTime * (providerMetric.totalQueries - 1);
                 providerMetric.averageResponseTime = 
-                  (totalProviderResponseTime + entry.responseTime) / providerMetric.totalQueries;
+                  (totalProviderResponseTime + entry.processing.responseTime) / providerMetric.totalQueries;
               }
             }
-          } else if (entry.type === 'server_event') {
-            if (entry.eventType === 'started' || entry.eventType === 'stopped' || entry.eventType === 'crashed') {
-              serverEvents.push({
-                type: entry.eventType,
-                timestamp: entry.timestamp,
-                message: entry.message || `Server ${entry.eventType}`,
-                port: entry.port,
-              });
+          } else if (entry.type === 'error') {
+            // Handle DNS error events - count as failures but don't add to server events
+            queryMetrics.totalQueries++;
+            queryMetrics.failedQueries++;
+            
+            // Track provider errors
+            if (entry.processing.provider) {
+              queryMetrics.errorsByProvider[entry.processing.provider] = 
+                (queryMetrics.errorsByProvider[entry.processing.provider] || 0) + 1;
             }
           }
         }
@@ -201,24 +217,23 @@ export async function GetMetrics(req: Request, _user: AuthUser): Promise<Respons
           .map(([domain, count]) => ({ domain, count }))
           .sort((a, b) => b.count - a.count)
           .slice(0, 10);
-
-      } catch (error) {
-        console.warn('Failed to aggregate metrics from logs driver:', error);
+      } else if (logError) {
+        console.warn('Failed to aggregate metrics from logs driver:', logError);
       }
     }
 
     // Get cache statistics
     let cacheStats = { hitRate: 0, entries: 0 };
     if (drivers.cache) {
-      try {
-        const cacheSize = await drivers.cache.size();
+      const [cacheSize, cacheError] = await tryAsync(() => drivers.cache!.size());
+      if (cacheSize !== null) {
         cacheStats.entries = cacheSize;
         // Cache hit rate is calculated from query metrics above
         cacheStats.hitRate = queryMetrics.totalQueries > 0 
           ? (queryMetrics.cachedQueries / queryMetrics.totalQueries) * 100 
           : 0;
-      } catch (error) {
-        console.warn('Failed to get cache statistics:', error);
+      } else if (cacheError) {
+        console.warn('Failed to get cache statistics:', cacheError);
       }
     }
 
@@ -227,20 +242,20 @@ export async function GetMetrics(req: Request, _user: AuthUser): Promise<Respons
     let whitelistEntries = 0;
     
     if (drivers.blacklist) {
-      try {
-        const blacklistData = await drivers.blacklist.list();
+      const [blacklistData, blacklistError] = await tryAsync(() => drivers.blacklist!.list());
+      if (blacklistData) {
         blacklistEntries = blacklistData.length;
-      } catch (error) {
-        console.warn('Failed to get blacklist statistics:', error);
+      } else if (blacklistError) {
+        console.warn('Failed to get blacklist statistics:', blacklistError);
       }
     }
 
     if (drivers.whitelist) {
-      try {
-        const whitelistData = await drivers.whitelist.list();
+      const [whitelistData, whitelistError] = await tryAsync(() => drivers.whitelist!.list());
+      if (whitelistData) {
         whitelistEntries = whitelistData.length;
-      } catch (error) {
-        console.warn('Failed to get whitelist statistics:', error);
+      } else if (whitelistError) {
+        console.warn('Failed to get whitelist statistics:', whitelistError);
       }
     }
 
@@ -284,16 +299,20 @@ export async function GetMetrics(req: Request, _user: AuthUser): Promise<Respons
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
-  } catch (error) {
+  });
+
+  if (error) {
     console.error("DNS metrics error:", error);
     return new Response(JSON.stringify({ 
       error: "Failed to get DNS metrics",
-      details: error instanceof Error ? error.message : String(error)
+      details: error.message
     }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
     });
   }
+
+  return result;
 }
 
 export default {

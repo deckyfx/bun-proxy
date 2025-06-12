@@ -1,7 +1,59 @@
-class EventEmitter<T = any> {
-  private listeners = new Map<string, Set<(data: T) => void>>();
+import { tryParse } from './try';
 
-  subscribe(channel: string, callback: (data: T) => void): () => void {
+// SSE Message Types
+export interface SSEMessage<T = unknown> {
+  type: string;
+  data: T;
+  timestamp?: number;
+}
+
+export interface DNSStatusMessage {
+  enabled: boolean;
+  server?: {
+    isRunning: boolean;
+    port: number;
+    providers?: string[];
+  } | null;
+  currentNextDnsConfigId?: string;
+}
+
+export interface DNSLogEventMessage {
+  id: string;
+  timestamp: number;
+  type: 'request' | 'response' | 'error' | 'server_event';
+  level: 'info' | 'warn' | 'error';
+  message?: string;
+}
+
+export interface DNSContentMessage {
+  driver: string;
+  count: number;
+  lastUpdated: number;
+  entries?: any[];
+}
+
+export interface SystemHeartbeatMessage {
+  timestamp: number;
+  status: 'alive';
+}
+
+export interface ErrorMessage {
+  error: string;
+  details?: string | object;
+}
+
+// Union type for all possible SSE message data types
+export type SSEMessageData = 
+  | DNSStatusMessage 
+  | DNSLogEventMessage 
+  | DNSContentMessage 
+  | SystemHeartbeatMessage 
+  | ErrorMessage;
+
+class EventEmitter {
+  private listeners = new Map<string, Set<(data: SSEMessageData) => void>>();
+
+  subscribe(channel: string, callback: (data: SSEMessageData) => void): () => void {
     if (!this.listeners.has(channel)) {
       this.listeners.set(channel, new Set());
     }
@@ -11,11 +63,11 @@ class EventEmitter<T = any> {
     return () => this.unsubscribe(channel, callback);
   }
 
-  unsubscribe(channel: string, callback: (data: T) => void): void {
+  unsubscribe(channel: string, callback: (data: SSEMessageData) => void): void {
     this.listeners.get(channel)?.delete(callback);
   }
 
-  emit(channel: string, data: T): void {
+  emit(channel: string, data: SSEMessageData): void {
     this.listeners.get(channel)?.forEach(callback => callback(data));
   }
 
@@ -49,7 +101,7 @@ export class SSEClient {
     return SSEClient.instance;
   }
 
-  subscribe(channel: string, callback: (data: any) => void): () => void {
+  subscribe(channel: string, callback: (data: SSEMessageData) => void): () => void {
     const unsubscribe = this.eventEmitter.subscribe(channel, callback);
     
     // Auto-connect if this is the first subscription
@@ -99,22 +151,23 @@ export class SSEClient {
     };
 
     this.eventSource.onmessage = (event) => {
-      try {
-        if (!event.data || event.data.trim() === '') {
-          return;
-        }
-
-        const message = JSON.parse(event.data);
-        
-        if (!message || typeof message !== 'object') {
-          return;
-        }
-        
-        // Route message to appropriate handler based on path structure
-        this.routeMessage(message.type, message.data);
-      } catch (error) {
-        console.error('Failed to parse SSE message:', error, 'Raw data:', event.data);
+      if (!event.data || event.data.trim() === '') {
+        return;
       }
+
+      const [message, error] = tryParse<SSEMessage<SSEMessageData>>(event.data);
+      
+      if (error) {
+        console.error('Failed to parse SSE message:', error, 'Raw data:', event.data);
+        return;
+      }
+      
+      if (!message || typeof message !== 'object' || !message.type) {
+        return;
+      }
+      
+      // Route message to appropriate handler based on path structure
+      this.routeMessage(message.type, message.data);
     };
 
     this.eventSource.onerror = (error) => {
@@ -162,7 +215,7 @@ export class SSEClient {
     this.connectionListeners.forEach(callback => callback(this.connected));
   }
 
-  private routeMessage(type: string, data: any): void {
+  private routeMessage(type: string, data: SSEMessageData): void {
     if (!type) return;
 
     console.log('SSE Client received message:', type, data);
@@ -202,7 +255,7 @@ export class SSEClient {
     this.eventEmitter.emit(type, data);
   }
 
-  private handleDNSEvent(pathParts: string[], data: any): void {
+  private handleDNSEvent(pathParts: string[], data: SSEMessageData): void {
     if (pathParts.length < 2) return;
 
     const subModule = pathParts[1]; // info, status, log, cache, etc.
@@ -214,28 +267,28 @@ export class SSEClient {
         break;
       case 'status':
         // DNS server start/stop
-        console.log('DNS status changed:', data);
+        console.log('DNS status changed:', data as DNSStatusMessage);
         break;
       case 'log':
         if (pathParts[2] === 'event') {
           // Real-time log events
-          console.log('DNS log event:', data);
+          console.log('DNS log event:', data as DNSLogEventMessage);
         } else {
           // Log content updates
-          console.log('DNS log content:', data);
+          console.log('DNS log content:', data as DNSContentMessage);
         }
         break;
       case 'cache':
         // Cache content updates
-        console.log('DNS cache updated:', data);
+        console.log('DNS cache updated:', data as DNSContentMessage);
         break;
       case 'blacklist':
         // Blacklist content updates
-        console.log('DNS blacklist updated:', data);
+        console.log('DNS blacklist updated:', data as DNSContentMessage);
         break;
       case 'whitelist':
         // Whitelist content updates
-        console.log('DNS whitelist updated:', data);
+        console.log('DNS whitelist updated:', data as DNSContentMessage);
         break;
       default:
         console.log('Unknown DNS sub-module:', subModule);
@@ -243,7 +296,7 @@ export class SSEClient {
     }
   }
 
-  private handleSystemEvent(pathParts: string[], data: any): void {
+  private handleSystemEvent(pathParts: string[], data: SSEMessageData): void {
     if (pathParts.length < 2) return;
 
     const subModule = pathParts[1]; // heartbeat, health, etc.
@@ -251,6 +304,7 @@ export class SSEClient {
     switch (subModule) {
       case 'heartbeat':
         // Keep connection alive - no action needed
+        console.log('System heartbeat:', data as SystemHeartbeatMessage);
         break;
       case 'health':
         // System health updates

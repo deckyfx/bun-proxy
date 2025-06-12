@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { tryAsync, trySync } from '@src/utils/try';
 
 export interface TestResult {
   id: string;
@@ -78,7 +79,7 @@ export function createDNSQuery(domain: string): Uint8Array {
 export function parseDNSResponse(response: ArrayBuffer | Buffer): string[] {
   const ips: string[] = [];
   
-  try {
+  const [result, error] = trySync(() => {
     // Handle both ArrayBuffer and Buffer
     let buffer: ArrayBuffer;
     let uint8Array: Uint8Array;
@@ -149,11 +150,16 @@ export function parseDNSResponse(response: ArrayBuffer | Buffer): string[] {
       
       offset += dataLength;
     }
-  } catch (error) {
+    
+    return ips;
+  });
+  
+  if (error) {
     console.warn('Error parsing DNS response:', error);
+    return ips;
   }
   
-  return ips;
+  return result || ips;
 }
 
 export const useDNSTestStore = create<DNSTestStore>((set, get) => ({
@@ -197,47 +203,61 @@ export const useDNSTestStore = create<DNSTestStore>((set, get) => ({
       status: 'pending'
     });
 
-    try {
-      const startTime = Date.now();
-      
-      // Send UDP request to DNS server via API
-      const response = await fetch('/api/dns/test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          method: 'UDP',
-          domain,
-          port
-        })
-      });
+    const startTime = Date.now();
+    
+    const [response, fetchError] = await tryAsync(() => fetch('/api/dns/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        method: 'UDP',
+        domain,
+        port
+      })
+    }));
 
-      const duration = Date.now() - startTime;
+    const duration = Date.now() - startTime;
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      
-      if (data.success) {
-        updateResult(resultId, {
-          status: 'success',
-          duration,
-          ips: data.ips || [],
-          details: data.details
-        });
-      } else {
-        updateResult(resultId, {
-          status: 'error',
-          duration,
-          error: data.error,
-          details: data.details
-        });
-      }
-    } catch (error) {
+    if (fetchError) {
       updateResult(resultId, {
         status: 'error',
-        error: error instanceof Error ? error.message : String(error)
+        error: fetchError.message || String(fetchError)
+      });
+      return;
+    }
+
+    if (!response.ok) {
+      updateResult(resultId, {
+        status: 'error',
+        error: `HTTP ${response.status}: ${response.statusText}`,
+        duration
+      });
+      return;
+    }
+
+    const [data, jsonError] = await tryAsync(() => response.json());
+    
+    if (jsonError) {
+      updateResult(resultId, {
+        status: 'error',
+        error: jsonError.message || 'Failed to parse response',
+        duration
+      });
+      return;
+    }
+    
+    if (data.success) {
+      updateResult(resultId, {
+        status: 'success',
+        duration,
+        ips: data.ips || [],
+        details: data.details
+      });
+    } else {
+      updateResult(resultId, {
+        status: 'error',
+        duration,
+        error: data.error,
+        details: data.details
       });
     }
   },
@@ -252,68 +272,107 @@ export const useDNSTestStore = create<DNSTestStore>((set, get) => ({
       status: 'pending'
     });
 
-    try {
-      const startTime = Date.now();
-      
-      if (method === 'POST') {
-        // DoH POST with binary DNS query
-        const query = createDNSQuery(domain);
-        const response = await fetch('/', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/dns-message',
-            'Accept': 'application/dns-message'
-          },
-          body: query
-        });
+    const startTime = Date.now();
+    
+    if (method === 'POST') {
+      // DoH POST with binary DNS query
+      const query = createDNSQuery(domain);
+      const [response, fetchError] = await tryAsync(() => fetch('/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/dns-message',
+          'Accept': 'application/dns-message'
+        },
+        body: query
+      }));
 
-        const duration = Date.now() - startTime;
+      const duration = Date.now() - startTime;
 
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        const responseBuffer = await response.arrayBuffer();
-        const ips = parseDNSResponse(responseBuffer);
-        
+      if (fetchError) {
         updateResult(resultId, {
-          status: 'success',
-          duration,
-          ips,
-          details: `Response size: ${responseBuffer.byteLength} bytes`
+          status: 'error',
+          error: fetchError.message || String(fetchError)
         });
-      } else {
-        // DoH GET with base64url query
-        const query = createDNSQuery(domain);
-        // Convert Uint8Array to base64 in browser
-        const base64 = btoa(String.fromCharCode(...query));
-        const base64url = base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-        
-        const response = await fetch(`/?dns=${base64url}`, {
-          method: 'GET',
-          headers: { 'Accept': 'application/dns-message' }
-        });
-
-        const duration = Date.now() - startTime;
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        const responseBuffer = await response.arrayBuffer();
-        const ips = parseDNSResponse(responseBuffer);
-        
-        updateResult(resultId, {
-          status: 'success',
-          duration,
-          ips,
-          details: `Query length: ${base64url.length} chars, Response: ${responseBuffer.byteLength} bytes`
-        });
+        return;
       }
-    } catch (error) {
+
+      if (!response.ok) {
+        updateResult(resultId, {
+          status: 'error',
+          error: `HTTP ${response.status}: ${response.statusText}`,
+          duration
+        });
+        return;
+      }
+
+      const [responseBuffer, bufferError] = await tryAsync(() => response.arrayBuffer());
+      
+      if (bufferError) {
+        updateResult(resultId, {
+          status: 'error',
+          error: bufferError.message || 'Failed to read response',
+          duration
+        });
+        return;
+      }
+      
+      const ips = parseDNSResponse(responseBuffer);
+      
       updateResult(resultId, {
-        status: 'error',
-        error: error instanceof Error ? error.message : String(error)
+        status: 'success',
+        duration,
+        ips,
+        details: `Response size: ${responseBuffer.byteLength} bytes`
+      });
+    } else {
+      // DoH GET with base64url query
+      const query = createDNSQuery(domain);
+      // Convert Uint8Array to base64 in browser
+      const base64 = btoa(String.fromCharCode(...query));
+      const base64url = base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+      
+      const [response, fetchError] = await tryAsync(() => fetch(`/?dns=${base64url}`, {
+        method: 'GET',
+        headers: { 'Accept': 'application/dns-message' }
+      }));
+
+      const duration = Date.now() - startTime;
+
+      if (fetchError) {
+        updateResult(resultId, {
+          status: 'error',
+          error: fetchError.message || String(fetchError)
+        });
+        return;
+      }
+
+      if (!response.ok) {
+        updateResult(resultId, {
+          status: 'error',
+          error: `HTTP ${response.status}: ${response.statusText}`,
+          duration
+        });
+        return;
+      }
+
+      const [responseBuffer, bufferError] = await tryAsync(() => response.arrayBuffer());
+      
+      if (bufferError) {
+        updateResult(resultId, {
+          status: 'error',
+          error: bufferError.message || 'Failed to read response',
+          duration
+        });
+        return;
+      }
+      
+      const ips = parseDNSResponse(responseBuffer);
+      
+      updateResult(resultId, {
+        status: 'success',
+        duration,
+        ips,
+        details: `Query length: ${base64url.length} chars, Response: ${responseBuffer.byteLength} bytes`
       });
     }
   },
@@ -323,14 +382,16 @@ export const useDNSTestStore = create<DNSTestStore>((set, get) => ({
     
     setRunning(true);
     
-    try {
-      await Promise.all([
-        testUDP(domain),
-        testDoH(domain, 'GET'),
-        testDoH(domain, 'POST')
-      ]);
-    } finally {
-      setRunning(false);
+    const [, error] = await tryAsync(() => Promise.all([
+      testUDP(domain),
+      testDoH(domain, 'GET'),
+      testDoH(domain, 'POST')
+    ]));
+    
+    if (error) {
+      console.error('Error running all tests:', error);
     }
+    
+    setRunning(false);
   }
 }));

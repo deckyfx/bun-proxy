@@ -1,21 +1,17 @@
 import { Button, Card, Select, Table, type TableColumn, FloatingLabelInput } from "@app/components/index";
 import { useState, useEffect } from "react";
-import { DRIVER_TYPES } from "@src/types/driver";
+import { DRIVER_TYPES, type DriversResponse } from "@src/types/driver";
+import type { WhitelistEntry as ServerWhitelistEntry } from "@src/dns/drivers/whitelist/BaseDriver";
 import { useDnsWhitelistStore } from "@app/stores/dnsWhitelistStore";
 import { useDialogStore } from "@app/stores/dialogStore";
+import { tryAsync } from '@src/utils/try';
 
 interface WhitelistDriverProps {
-  drivers: any;
+  drivers: DriversResponse | null;
   loading: boolean;
 }
 
-interface WhitelistEntry {
-  domain: string;
-  reason?: string;
-  category?: string;
-  addedAt?: string;
-  source?: string;
-}
+type WhitelistEntry = ServerWhitelistEntry;
 
 const formatDriverName = (name: string): string => {
   if (!name) return "Unknown";
@@ -32,31 +28,32 @@ const formatDriverName = (name: string): string => {
   );
 };
 
-const tableColumns: TableColumn<WhitelistEntry>[] = [
+const tableColumns: TableColumn<ServerWhitelistEntry>[] = [
   {
     key: "domain",
     label: "Domain",
     className: "font-mono",
-    render: (value: string) => (
-      <div className="max-w-48 truncate" title={value}>
-        {value}
+    render: (value) => (
+      <div className="max-w-48 truncate" title={String(value || '')}>
+        {String(value || '')}
       </div>
     ),
   },
   {
     key: "reason",
     label: "Reason",
-    render: (value: string | undefined) => (
-      <div className="max-w-32 truncate" title={value}>
-        {value || <span className="text-gray-400">No reason</span>}
+    render: (value) => (
+      <div className="max-w-32 truncate" title={String(value || '')}>
+        {String(value || '') || <span className="text-gray-400">No reason</span>}
       </div>
     ),
   },
   {
     key: "category",
     label: "Category",
-    render: (value: string | undefined) => {
-      if (!value) return <span className="text-gray-400">-</span>;
+    render: (value) => {
+      const stringValue = String(value || '');
+      if (!stringValue) return <span className="text-gray-400">-</span>;
       
       const categoryColors: Record<string, string> = {
         banking: "bg-green-100 text-green-800",
@@ -68,11 +65,11 @@ const tableColumns: TableColumn<WhitelistEntry>[] = [
         manual: "bg-yellow-100 text-yellow-800",
       };
       
-      const colorClass = categoryColors[value.toLowerCase()] || "bg-gray-100 text-gray-800";
+      const colorClass = categoryColors[stringValue.toLowerCase()] || "bg-gray-100 text-gray-800";
       
       return (
         <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${colorClass}`}>
-          {value}
+          {stringValue}
         </span>
       );
     },
@@ -80,8 +77,9 @@ const tableColumns: TableColumn<WhitelistEntry>[] = [
   {
     key: "source",
     label: "Source",
-    render: (value: string | undefined) => {
-      if (!value) return <span className="text-gray-400">-</span>;
+    render: (value) => {
+      const stringValue = String(value || '');
+      if (!stringValue) return <span className="text-gray-400">-</span>;
       
       const sourceIcons: Record<string, string> = {
         manual: "person",
@@ -90,12 +88,12 @@ const tableColumns: TableColumn<WhitelistEntry>[] = [
         api: "api",
       };
       
-      const icon = sourceIcons[value.toLowerCase()] || "help";
+      const icon = sourceIcons[stringValue.toLowerCase()] || "help";
       
       return (
         <div className="flex items-center gap-1">
           <span className="material-icons text-sm text-gray-500">{icon}</span>
-          <span className="text-sm capitalize">{value}</span>
+          <span className="text-sm capitalize">{stringValue}</span>
         </div>
       );
     },
@@ -103,8 +101,8 @@ const tableColumns: TableColumn<WhitelistEntry>[] = [
   {
     key: "addedAt",
     label: "Added",
-    render: (value: string | undefined) => {
-      if (!value) return <span className="text-gray-400">-</span>;
+    render: (value) => {
+      if (!value || typeof value !== 'number') return <span className="text-gray-400">-</span>;
       return (
         <span className="text-sm text-gray-600">
           {new Date(value).toLocaleString()}
@@ -132,9 +130,9 @@ export default function WhitelistDriver({ drivers, loading }: WhitelistDriverPro
   const { showConfirm, showCustom, closeDialog } = useDialogStore();
 
   useEffect(() => {
-    if (drivers?.current?.whitelist) {
+    if (drivers?.current?.[DRIVER_TYPES.WHITELIST]) {
       setDriverForm({
-        driver: drivers.current.whitelist.implementation || 'inmemory'
+        driver: drivers.current[DRIVER_TYPES.WHITELIST].implementation || 'inmemory'
       });
     }
   }, [drivers]);
@@ -225,20 +223,19 @@ export default function WhitelistDriver({ drivers, loading }: WhitelistDriverPro
         if (!formData.domain) return;
 
         setSubmitting(true);
-        try {
-          const success = await addEntry(
-            formData.domain, 
-            formData.reason || 'Manually added', 
-            formData.category || 'manual'
-          );
-          
-          if (success) {
-            await fetchWhitelistContent();
-            closeDialog(dialogId);
-          }
-        } finally {
-          setSubmitting(false);
+        
+        const [success, error] = await tryAsync(() => addEntry(
+          formData.domain, 
+          formData.reason || 'Manually added', 
+          formData.category || 'manual'
+        ));
+        
+        if (!error && success) {
+          await fetchWhitelistContent();
+          closeDialog(dialogId);
         }
+        
+        setSubmitting(false);
       };
 
       return (
@@ -300,8 +297,8 @@ export default function WhitelistDriver({ drivers, loading }: WhitelistDriverPro
     );
   };
 
-  const availableDrivers = drivers?.available[DRIVER_TYPES.WHITELIST] || [];
-  const currentDriver = drivers?.current[DRIVER_TYPES.WHITELIST];
+  const availableDrivers = drivers?.available?.[DRIVER_TYPES.WHITELIST] || [];
+  const currentDriver = drivers?.current?.[DRIVER_TYPES.WHITELIST];
 
   return (
     <div className="space-y-4">
@@ -449,7 +446,7 @@ export default function WhitelistDriver({ drivers, loading }: WhitelistDriverPro
               <span className="material-icons text-lg">verified</span>
               <span className="font-medium">Allowed Domains</span>
               <span className="text-sm text-gray-500">
-                ({Array.isArray(content?.content) ? content.content.length : 0} domains)
+                ({content && 'entries' in content && Array.isArray(content.entries) ? content.entries.length : 0} domains)
               </span>
             </div>
           </div>
@@ -458,7 +455,7 @@ export default function WhitelistDriver({ drivers, loading }: WhitelistDriverPro
             columns={[...tableColumns, {
               key: "actions",
               label: "Actions",
-              render: (_value: any, entry: WhitelistEntry) => (
+              render: (_value, entry) => (
                 <button
                   onClick={() => handleRemoveEntry(entry.domain)}
                   className="inline-flex items-center gap-1 px-2 py-1 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
@@ -469,12 +466,12 @@ export default function WhitelistDriver({ drivers, loading }: WhitelistDriverPro
                 </button>
               ),
             }]}
-            data={Array.isArray(content?.content) ? content.content : []}
+            data={content && 'entries' in content && Array.isArray(content.entries) ? content.entries as ServerWhitelistEntry[] : []}
             loading={contentLoading}
             loadingMessage="Loading whitelist entries..."
             emptyMessage={
-              typeof content?.content === "string"
-                ? content.content
+              !content || !content.success
+                ? "Failed to load whitelist entries"
                 : currentDriver?.implementation === "inmemory"
                 ? "No domains in whitelist. Add trusted domains manually or import from logs."
                 : "No whitelist entries available. Click Refresh to load entries from the current driver."

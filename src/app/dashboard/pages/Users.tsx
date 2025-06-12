@@ -7,6 +7,7 @@ import { useUserDialog } from "./users/UserDialog";
 import { useDialogStore } from "@app/stores/dialogStore";
 import { useUserStore, type User, type CreateUserData, type UpdateUserData } from "@app/stores/userStore";
 import { useAuthStore } from "@app/stores/authStore";
+import { tryAsync } from '@src/utils/try';
 
 export default function Users() {
   const { users, loading, error, fetchUsers, createUser, updateUser, deleteUser, clearError } = useUserStore();
@@ -32,22 +33,16 @@ export default function Users() {
   const handleCreateUser = () => {
     showUserDialog(async (userData) => {
       setSubmitting(true);
-      try {
-        await createUser(userData as CreateUserData);
-      } finally {
-        setSubmitting(false);
-      }
+      const [, error] = await tryAsync(() => createUser(userData as CreateUserData));
+      setSubmitting(false);
     });
   };
 
   const handleEditUser = (user: User) => {
     showUserDialog(async (userData) => {
       setSubmitting(true);
-      try {
-        await updateUser(userData as UpdateUserData);
-      } finally {
-        setSubmitting(false);
-      }
+      const [, error] = await tryAsync(() => updateUser(userData as UpdateUserData));
+      setSubmitting(false);
     }, user);
   };
 
@@ -75,11 +70,8 @@ export default function Users() {
 
     if (confirmed) {
       setSubmitting(true);
-      try {
-        await deleteUser(user.id);
-      } finally {
-        setSubmitting(false);
-      }
+      const [, error] = await tryAsync(() => deleteUser(user.id));
+      setSubmitting(false);
     }
   };
 
@@ -101,7 +93,7 @@ export default function Users() {
       className: 'font-medium text-gray-900',
       render: (value, user) => (
         <div className="flex items-center">
-          <span>{value}</span>
+          <span>{value as string}</span>
           {user.id === 1 && (
             <span className="ml-2 px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
               Superadmin
@@ -124,7 +116,7 @@ export default function Users() {
             ? "bg-green-100 text-green-800" 
             : "bg-gray-100 text-gray-800"
         }`}>
-          {value}
+          {value as string}
         </span>
       ),
     },
@@ -132,7 +124,7 @@ export default function Users() {
       key: 'last_login',
       label: 'Last Login',
       className: 'text-gray-600 text-sm',
-      render: (value) => formatLastLogin(value),
+      render: (value) => formatLastLogin(value as Date),
     },
     {
       key: 'actions',

@@ -3,8 +3,9 @@ import user from './user';
 import system from './system';
 import dns from './dns';
 import sse from './sse';
+import type { BunRequest } from 'bun';
 
-type RouteHandler = (req: any) => Promise<Response>;
+type RouteHandler = (req: BunRequest) => Promise<Response>;
 type RouteConfig = { [K in 'GET' | 'POST' | 'PUT' | 'DELETE']?: RouteHandler };
 
 const ScopedRoutes: Record<string, Record<string, RouteConfig>> = {

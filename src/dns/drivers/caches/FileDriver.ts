@@ -1,44 +1,52 @@
-import { BaseDriver, type CacheEntry, type CacheOptions } from './BaseDriver';
-import { readFile, writeFile, mkdir } from 'fs/promises';
-import { dirname } from 'path';
+import { BaseDriver, type CacheOptions } from "./BaseDriver";
+import type { CachedDnsResponse } from "@src/types/dns-unified";
+import { readFile, writeFile, mkdir } from "fs/promises";
+import { dirname } from "path";
+import { tryParse, tryAsync } from "@src/utils/try";
 
-export class FileDriver<T = any> extends BaseDriver<T> {
-  static readonly DRIVER_NAME = 'file';
-  
+export class FileDriver extends BaseDriver {
+  static override readonly DRIVER_NAME = "file";
+
   private filePath: string;
-  private cache = new Map<string, CacheEntry<T>>();
+  private cache = new Map<string, CachedDnsResponse>();
   private dirty = false;
   private saveTimer?: Timer;
 
   constructor(options: CacheOptions = {}) {
     super(options);
-    this.filePath = options.filePath || './data/dns-cache.json';
+    this.filePath = options.filePath || "./data/dns-cache.json";
     this.startAutoSave();
   }
 
   async init(): Promise<void> {
-    try {
-      await this.ensureDirectoryExists();
-      const content = await readFile(this.filePath, 'utf8');
-      const data = JSON.parse(content);
-      
-      for (const [key, entry] of Object.entries(data)) {
-        this.cache.set(key, entry as CacheEntry<T>);
+    await this.ensureDirectoryExists();
+    
+    const [content, readError] = await tryAsync(() => readFile(this.filePath, "utf8"));
+    if (readError) {
+      if ((readError as any)?.code !== "ENOENT") {
+        console.warn("Failed to load cache from file:", readError);
       }
-    } catch (error) {
-      if ((error as any)?.code !== 'ENOENT') {
-        console.warn('Failed to load cache from file:', error);
-      }
+      return;
+    }
+
+    const [data, parseError] = tryParse<Record<string, CachedDnsResponse>>(content);
+    if (parseError) {
+      console.warn("Failed to parse cache file:", parseError);
+      return;
+    }
+
+    for (const [key, entry] of Object.entries(data)) {
+      this.cache.set(key, entry);
     }
   }
 
-  async get(key: string): Promise<T | null> {
+  async get(key: string): Promise<CachedDnsResponse | null> {
     if (this.cache.size === 0) {
       await this.init();
     }
 
     const entry = this.cache.get(key);
-    
+
     if (!entry) {
       this.recordMiss();
       return null;
@@ -51,33 +59,28 @@ export class FileDriver<T = any> extends BaseDriver<T> {
       return null;
     }
 
-    // Update access tracking
-    entry.accessCount++;
-    entry.lastAccessed = Date.now();
-    this.cache.set(key, entry);
-    this.markDirty();
-    
     this.recordHit();
-    return entry.value;
+    return entry;
   }
 
-  async set(key: string, value: T, ttl?: number): Promise<void> {
+  async set(
+    key: string,
+    value: CachedDnsResponse,
+    ttl?: number
+  ): Promise<void> {
     if (this.cache.size === 0) {
       await this.init();
     }
 
-    const effectiveTtl = ttl || this.options.defaultTtl!;
-    const now = Date.now();
-    
-    const entry: CacheEntry<T> = {
-      value,
-      ttl: effectiveTtl,
-      createdAt: now,
-      accessCount: 0,
-      lastAccessed: now
-    };
+    // Use the TTL from the CachedDnsResponse or override with provided TTL
+    if (ttl !== undefined) {
+      // Override the cache TTL if specified
+      const now = Date.now();
+      value.cache.ttl = ttl;
+      value.cache.expiresAt = now + ttl;
+    }
 
-    this.cache.set(key, entry);
+    this.cache.set(key, value);
     this.markDirty();
 
     // Check if we need to evict entries
@@ -106,13 +109,13 @@ export class FileDriver<T = any> extends BaseDriver<T> {
 
     const entry = this.cache.get(key);
     if (!entry) return false;
-    
+
     if (this.isExpired(entry)) {
       this.cache.delete(key);
       this.markDirty();
       return false;
     }
-    
+
     return true;
   }
 
@@ -120,7 +123,7 @@ export class FileDriver<T = any> extends BaseDriver<T> {
     if (this.cache.size === 0) {
       await this.init();
     }
-    
+
     await this.evictExpired();
     return Array.from(this.cache.keys());
   }
@@ -129,7 +132,7 @@ export class FileDriver<T = any> extends BaseDriver<T> {
     if (this.cache.size === 0) {
       await this.init();
     }
-    
+
     await this.evictExpired();
     return this.cache.size;
   }
@@ -141,7 +144,7 @@ export class FileDriver<T = any> extends BaseDriver<T> {
 
   async evictExpired(): Promise<number> {
     let evicted = 0;
-    
+
     for (const [key, entry] of this.cache.entries()) {
       if (this.isExpired(entry)) {
         this.cache.delete(key);
@@ -149,21 +152,22 @@ export class FileDriver<T = any> extends BaseDriver<T> {
         this.recordEviction();
       }
     }
-    
+
     if (evicted > 0) {
       this.markDirty();
     }
-    
+
     return evicted;
   }
 
   async evictLRU(count: number = 1): Promise<number> {
     if (this.cache.size === 0) return 0;
-    
-    // Sort by last accessed time (oldest first)
-    const entries = Array.from(this.cache.entries())
-      .sort(([, a], [, b]) => a.lastAccessed - b.lastAccessed);
-    
+
+    // Sort by timestamp (oldest first)
+    const entries = Array.from(this.cache.entries()).sort(
+      ([, a], [, b]) => a.cache.timestamp - b.cache.timestamp
+    );
+
     let evicted = 0;
     for (let i = 0; i < Math.min(count, entries.length); i++) {
       const [key] = entries[i]!;
@@ -171,20 +175,20 @@ export class FileDriver<T = any> extends BaseDriver<T> {
       evicted++;
       this.recordEviction();
     }
-    
+
     if (evicted > 0) {
       this.markDirty();
     }
-    
+
     return evicted;
   }
 
   async save(): Promise<void> {
     if (!this.dirty) return;
-    
+
     await this.ensureDirectoryExists();
     const data = Object.fromEntries(this.cache.entries());
-    await writeFile(this.filePath, JSON.stringify(data, null, 2), 'utf8');
+    await writeFile(this.filePath, JSON.stringify(data, null, 2), "utf8");
     this.dirty = false;
   }
 

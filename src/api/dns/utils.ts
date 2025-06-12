@@ -1,114 +1,159 @@
 import { dnsManager } from "@src/dns/manager";
 
+// Import driver types
+import type { LogOptions, BaseDriver as BaseLogDriver } from "@src/dns/drivers/logs/BaseDriver";
+import type { CacheOptions, BaseDriver as BaseCacheDriver } from "@src/dns/drivers/caches/BaseDriver";
+import type { BlacklistOptions, BaseDriver as BaseBlacklistDriver } from "@src/dns/drivers/blacklist/BaseDriver";
+import type { WhitelistOptions, BaseDriver as BaseWhitelistDriver } from "@src/dns/drivers/whitelist/BaseDriver";
+import type { DNSResolverDrivers } from "@src/dns/resolver";
+
+// Import driver implementations
+import { 
+  ConsoleDriver,
+  InMemoryDriver as LogsInMemoryDriver,
+  FileDriver as LogsFileDriver,
+  SQLiteDriver as LogsSQLiteDriver 
+} from "@src/dns/drivers/logs";
+
+import {
+  InMemoryDriver as CacheInMemoryDriver,
+  FileDriver as CacheFileDriver,
+  SQLiteDriver as CacheSQLiteDriver
+} from "@src/dns/drivers/caches";
+
+import {
+  InMemoryDriver as BlacklistInMemoryDriver,
+  FileDriver as BlacklistFileDriver,
+  SQLiteDriver as BlacklistSQLiteDriver
+} from "@src/dns/drivers/blacklist";
+
+import {
+  InMemoryDriver as WhitelistInMemoryDriver,
+  FileDriver as WhitelistFileDriver,
+  SQLiteDriver as WhitelistSQLiteDriver
+} from "@src/dns/drivers/whitelist";
+
+// Type definitions for driver instances
+type LogsDriverInstance = ConsoleDriver | LogsInMemoryDriver | LogsFileDriver | LogsSQLiteDriver;
+type CacheDriverInstance = CacheInMemoryDriver | CacheFileDriver | CacheSQLiteDriver;
+type BlacklistDriverInstance = BlacklistInMemoryDriver | BlacklistFileDriver | BlacklistSQLiteDriver;
+type WhitelistDriverInstance = WhitelistInMemoryDriver | WhitelistFileDriver | WhitelistSQLiteDriver;
+
+// DNS Server drivers interface (concrete instances)
+export interface DNSServerDrivers {
+  logs: LogsDriverInstance;
+  cache: CacheDriverInstance;
+  blacklist: BlacklistDriverInstance;
+  whitelist: WhitelistDriverInstance;
+}
+
 // Helper functions to create driver instances
-export function createLogsDriverInstance(driverName: string, options?: Record<string, any>): any {
-  const { ConsoleDriver } = require("@src/dns/drivers/logs/ConsoleDriver");
-  const { InMemoryDriver: LogsInMemoryDriver } = require("@src/dns/drivers/logs/InMemoryDriver");
-  const { FileDriver: LogsFileDriver } = require("@src/dns/drivers/logs/FileDriver");
-  const { SQLiteDriver: LogsSQLiteDriver } = require("@src/dns/drivers/logs/SQLiteDriver");
-  
-  const driverOptions = options || {};
-  
+export function createLogsDriverInstance(driverName: string, options: LogOptions = {}): LogsDriverInstance {
   switch (driverName.toLowerCase()) {
     case 'console':
-      return new ConsoleDriver(driverOptions);
+      return new ConsoleDriver(options);
     case 'inmemory':
-      return new LogsInMemoryDriver(driverOptions);
+      return new LogsInMemoryDriver(options);
     case 'file':
-      return new LogsFileDriver(driverOptions);
+      return new LogsFileDriver(options);
     case 'sqlite':
-      return new LogsSQLiteDriver(driverOptions);
+      return new LogsSQLiteDriver(options);
     default:
       throw new Error(`Unknown logs driver: ${driverName}`);
   }
 }
 
-export function createCacheDriverInstance(driverName: string, options?: Record<string, any>): any {
-  const { InMemoryDriver: CacheInMemoryDriver } = require("@src/dns/drivers/caches/InMemoryDriver");
-  const { FileDriver: CacheFileDriver } = require("@src/dns/drivers/caches/FileDriver");
-  const { SQLiteDriver: CacheSQLiteDriver } = require("@src/dns/drivers/caches/SQLiteDriver");
-  
-  const driverOptions = options || {};
-  
+export function createCacheDriverInstance(driverName: string, options: CacheOptions = {}): CacheDriverInstance {
   switch (driverName.toLowerCase()) {
     case 'inmemory':
-      return new CacheInMemoryDriver(driverOptions);
+      return new CacheInMemoryDriver(options);
     case 'file':
-      return new CacheFileDriver(driverOptions);
+      return new CacheFileDriver(options);
     case 'sqlite':
-      return new CacheSQLiteDriver(driverOptions);
+      return new CacheSQLiteDriver(options);
     default:
       throw new Error(`Unknown cache driver: ${driverName}`);
   }
 }
 
-export function createBlacklistDriverInstance(driverName: string, options?: Record<string, any>): any {
-  const { InMemoryDriver: BlacklistInMemoryDriver } = require("@src/dns/drivers/blacklist/InMemoryDriver");
-  const { FileDriver: BlacklistFileDriver } = require("@src/dns/drivers/blacklist/FileDriver");
-  const { SQLiteDriver: BlacklistSQLiteDriver } = require("@src/dns/drivers/blacklist/SQLiteDriver");
-  
-  const driverOptions = options || {};
-  
+export function createBlacklistDriverInstance(driverName: string, options: BlacklistOptions = {}): BlacklistDriverInstance {
   switch (driverName.toLowerCase()) {
     case 'inmemory':
-      return new BlacklistInMemoryDriver(driverOptions);
+      return new BlacklistInMemoryDriver(options);
     case 'file':
-      return new BlacklistFileDriver(driverOptions);
+      return new BlacklistFileDriver(options);
     case 'sqlite':
-      return new BlacklistSQLiteDriver(driverOptions);
+      return new BlacklistSQLiteDriver(options);
     default:
       throw new Error(`Unknown blacklist driver: ${driverName}`);
   }
 }
 
-export function createWhitelistDriverInstance(driverName: string, options?: Record<string, any>): any {
-  const { InMemoryDriver: WhitelistInMemoryDriver } = require("@src/dns/drivers/whitelist/InMemoryDriver");
-  const { FileDriver: WhitelistFileDriver } = require("@src/dns/drivers/whitelist/FileDriver");
-  const { SQLiteDriver: WhitelistSQLiteDriver } = require("@src/dns/drivers/whitelist/SQLiteDriver");
-  
-  const driverOptions = options || {};
-  
+export function createWhitelistDriverInstance(driverName: string, options: WhitelistOptions = {}): WhitelistDriverInstance {
   switch (driverName.toLowerCase()) {
     case 'inmemory':
-      return new WhitelistInMemoryDriver(driverOptions);
+      return new WhitelistInMemoryDriver(options);
     case 'file':
-      return new WhitelistFileDriver(driverOptions);
+      return new WhitelistFileDriver(options);
     case 'sqlite':
-      return new WhitelistSQLiteDriver(driverOptions);
+      return new WhitelistSQLiteDriver(options);
     default:
       throw new Error(`Unknown whitelist driver: ${driverName}`);
   }
 }
 
 // Common helper functions
-export function getDrivers(): any {
+export function getDrivers(): DNSResolverDrivers {
   const status = dnsManager.getStatus();
   
   if (status.server) {
     const serverInstance = dnsManager.getServerInstance();
-    if (serverInstance) {
-      return (serverInstance as any).drivers || {};
-    } else {
-      return dnsManager.getLastUsedDrivers();
+    if (serverInstance && 'getResolver' in serverInstance) {
+      // Get drivers from the resolver instance
+      const resolver = (serverInstance as { getResolver(): { getDrivers(): DNSResolverDrivers } }).getResolver();
+      return resolver.getDrivers();
     }
-  } else {
-    return dnsManager.getLastUsedDrivers();
   }
+  
+  // Fallback to manager's last used drivers
+  return dnsManager.getLastUsedDrivers() as DNSResolverDrivers;
 }
 
 export function isServerRunning(): boolean {
   return !!dnsManager.getStatus().server;
 }
 
+// Helper function to get driver name safely
+export function getDriverName(driver: BaseLogDriver | BaseCacheDriver | BaseBlacklistDriver | BaseWhitelistDriver | undefined): string {
+  if (!driver) return 'unknown';
+  return (driver.constructor as unknown as { DRIVER_NAME: string }).DRIVER_NAME;
+}
+
+// Response helper types
+export interface ErrorResponse {
+  error: string;
+  message: string;
+}
+
+export interface SuccessResponse<T = unknown> {
+  data: T;
+  timestamp?: number;
+}
+
 export function createErrorResponse(error: string, message: string, status: number = 500): Response {
-  return new Response(JSON.stringify({ error, message }), {
+  const responseData: ErrorResponse = { error, message };
+  return new Response(JSON.stringify(responseData), {
     status,
     headers: { 'Content-Type': 'application/json' }
   });
 }
 
-export function createSuccessResponse(data: any): Response {
-  return new Response(JSON.stringify(data), {
+export function createSuccessResponse<T>(data: T): Response {
+  const responseData: SuccessResponse<T> = { 
+    data,
+    timestamp: Date.now()
+  };
+  return new Response(JSON.stringify(responseData), {
     status: 200,
     headers: { 'Content-Type': 'application/json' }
   });

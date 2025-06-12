@@ -1,17 +1,17 @@
 import type { ReactNode } from 'react';
 
-export interface TableColumn<T = any> {
+export interface TableColumn<T = Record<string, unknown>> {
   key: string;
   label: string;
   className?: string;
   headerClassName?: string;
   sortable?: boolean;
   width?: string | number;
-  render?: (value: any, item: T, index: number) => ReactNode;
+  render?: (value: T[keyof T] | undefined, item: T, index: number) => ReactNode;
   onClick?: (item: T, index: number) => void;
 }
 
-export interface TableProps<T = any> {
+export interface TableProps<T = Record<string, unknown>> {
   columns: TableColumn<T>[];
   data: T[];
   renderRow?: (item: T, index: number) => ReactNode;
@@ -25,9 +25,10 @@ export interface TableProps<T = any> {
   onRowClick?: (item: T, index: number) => void;
   onCellClick?: (column: TableColumn<T>, item: T, index: number) => void;
   hoverable?: boolean;
+  getRowKey?: (item: T, index: number) => string | number;
 }
 
-export default function Table<T = any>({
+export default function Table<T = Record<string, unknown>>({
   columns,
   data,
   renderRow,
@@ -40,7 +41,8 @@ export default function Table<T = any>({
   rowClassName = '',
   onRowClick,
   onCellClick,
-  hoverable = true
+  hoverable = true,
+  getRowKey
 }: TableProps<T>) {
   const colSpan = columns.length;
 
@@ -78,13 +80,34 @@ export default function Table<T = any>({
   };
 
   const renderCell = (column: TableColumn<T>, item: T, index: number): ReactNode => {
-    const value = (item as any)[column.key];
+    const value = (item as Record<string, unknown>)[column.key];
     
     if (column.render) {
-      return column.render(value, item, index);
+      return column.render(value as T[keyof T] | undefined, item, index);
     }
     
     return value !== undefined && value !== null ? String(value) : '-';
+  };
+
+  const getUniqueRowKey = (item: T, index: number): string | number => {
+    if (getRowKey) {
+      return getRowKey(item, index);
+    }
+    
+    // Try to find a unique identifier in the item
+    const itemRecord = item as Record<string, unknown>;
+    if (itemRecord.id !== undefined) {
+      return String(itemRecord.id);
+    }
+    if (itemRecord.domain !== undefined && itemRecord.addedAt !== undefined) {
+      return `${itemRecord.domain}-${itemRecord.addedAt}`;
+    }
+    if (itemRecord.timestamp !== undefined && itemRecord.type !== undefined) {
+      return `${itemRecord.timestamp}-${itemRecord.type}-${index}`;
+    }
+    
+    // Fallback to index (not ideal but prevents crashes)
+    return `row-${index}`;
   };
 
   const renderTableRow = (item: T, index: number): ReactNode => {
@@ -96,13 +119,13 @@ export default function Table<T = any>({
     // Otherwise, render using column configuration
     return (
       <tr 
-        key={index}
+        key={getUniqueRowKey(item, index)}
         className={getRowClassName(item, index)}
         onClick={() => handleRowClick(item, index)}
       >
         {columns.map((column) => (
           <td
-            key={column.key}
+            key={String(column.key)}
             className={getCellClassName(column)}
             style={column.width ? { width: column.width } : undefined}
             onClick={(e) => {
@@ -126,7 +149,7 @@ export default function Table<T = any>({
           <tr>
             {columns.map((column) => (
               <th
-                key={column.key}
+                key={String(column.key)}
                 className={`px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${column.headerClassName || ''}`}
                 style={column.width ? { width: column.width } : undefined}
               >

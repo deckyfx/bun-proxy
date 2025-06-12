@@ -2,6 +2,7 @@ import { eq, desc, sql } from "drizzle-orm";
 import { db } from "@db/index";
 import { dnsWhitelist, type DnsWhitelistType, type DnsWhitelistInsert } from "@db/schema";
 import type { WhitelistEntry, WhitelistStats } from "@src/dns/drivers/whitelist/BaseDriver";
+import { tryAsync } from "@src/utils/try";
 
 export class DnsWhitelist {
   static async add(domain: string, reason?: string, category?: string): Promise<DnsWhitelistType> {
@@ -56,11 +57,11 @@ export class DnsWhitelist {
     
     const results = await whereQuery.orderBy(desc(dnsWhitelist.addedAt));
     return results.map(row => {
-      const data = JSON.parse(row.data);
+      const data: WhitelistEntry = JSON.parse(row.data);
       return {
         domain: row.domain,
         reason: data.reason,
-        addedAt: new Date(row.addedAt),
+        addedAt: row.addedAt,
         source: row.source as "manual" | "auto" | "import",
         category: data.category,
       };
@@ -86,11 +87,11 @@ export class DnsWhitelist {
     if (result.length === 0) return null;
 
     const row = result[0]!;
-    const data = JSON.parse(row.data);
+    const data: WhitelistEntry = JSON.parse(row.data);
     return {
       domain: row.domain,
       reason: data.reason,
-      addedAt: new Date(row.addedAt),
+      addedAt: row.addedAt,
       source: row.source as "manual" | "auto" | "import",
       category: data.category,
     };
@@ -103,17 +104,18 @@ export class DnsWhitelist {
       const data = { reason: entry.reason, category: entry.category };
       const insertData: DnsWhitelistInsert = {
         domain: this.normalizeDomain(entry.domain),
-        addedAt: entry.addedAt.getTime(),
+        addedAt: entry.addedAt,
         source: "import" as const,
         data: JSON.stringify(data),
       };
 
-      try {
-        await db.insert(dnsWhitelist).values(insertData).onConflictDoNothing();
+      const [, error] = await tryAsync(() => 
+        db.insert(dnsWhitelist).values(insertData).onConflictDoNothing()
+      );
+      if (!error) {
         imported++;
-      } catch (error) {
-        // Skip duplicates
       }
+      // Skip duplicates on error
     }
     
     return imported;
@@ -122,11 +124,11 @@ export class DnsWhitelist {
   static async export(): Promise<WhitelistEntry[]> {
     const results = await db.select().from(dnsWhitelist).orderBy(desc(dnsWhitelist.addedAt));
     return results.map(row => {
-      const data = JSON.parse(row.data);
+      const data: WhitelistEntry = JSON.parse(row.data);
       return {
         domain: row.domain,
         reason: data.reason,
-        addedAt: new Date(row.addedAt),
+        addedAt: row.addedAt,
         source: row.source as "manual" | "auto" | "import",
         category: data.category,
       };

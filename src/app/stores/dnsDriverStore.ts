@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { type DriversResponse } from '@src/types/driver';
 import { api } from '@app/utils/fetchUtils';
 import { sseClient } from '@src/utils/SSEClient';
+import { tryAsync } from '@src/utils/try';
 
 interface DnsDriverStore {
   // State
@@ -28,43 +29,43 @@ export const useDnsDriverStore = create<DnsDriverStore>((set, get) => ({
     const currentDrivers = get().drivers;
     set({ loading: true, error: null });
     
-    try {
-      const data = await api.get<DriversResponse>('/api/dns/driver');
-      
+    const [data, error] = await tryAsync(() => api.get<DriversResponse>('/api/dns/driver'));
+    
+    if (error) {
+      const errorMessage = error.message || 'Failed to fetch driver info';
+      set({ error: errorMessage });
+      console.error('Failed to fetch driver info:', error);
+    } else {
       // Only update state if data actually changed
       if (JSON.stringify(currentDrivers) !== JSON.stringify(data)) {
         set({ drivers: data });
       }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch driver info';
-      set({ error: errorMessage });
-      console.error('Failed to fetch driver info:', error);
-    } finally {
-      set({ loading: false });
     }
+    
+    set({ loading: false });
   },
 
   setDriver: async (scope: string, driver: string) => {
     set({ loading: true, error: null });
     
-    try {
-      await api.post<void, { method: string; driver: string }>(`/api/dns/${scope}`, {
-        method: 'SET',
-        driver: driver
-      }, {
-        showSuccess: true,
-        successMessage: `${scope} driver updated to ${driver}`
-      });
-      
-      // Don't fetch here - SSE will update automatically
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : `Failed to set ${scope} driver`;
+    const [, error] = await tryAsync(() => api.post<void, { method: string; driver: string }>(`/api/dns/${scope}`, {
+      method: 'SET',
+      driver: driver
+    }, {
+      showSuccess: true,
+      successMessage: `${scope} driver updated to ${driver}`
+    }));
+    
+    if (error) {
+      const errorMessage = error.message || `Failed to set ${scope} driver`;
       set({ error: errorMessage });
       console.error(`Failed to set ${scope} driver:`, error);
-      throw error;
-    } finally {
       set({ loading: false });
+      throw error;
     }
+    
+    // Don't fetch here - SSE will update automatically
+    set({ loading: false });
   },
 
   clearError: () => {
@@ -88,7 +89,7 @@ export const useDnsDriverStore = create<DnsDriverStore>((set, get) => ({
     // Subscribe to DNS configuration changes (includes driver changes)
     const unsubscribeConfig = sseClient.subscribe('dns/info', (configData) => {
       // Only update if this event specifically relates to driver configuration changes
-      if (configData && (configData.drivers || configData.timestamp)) {
+      if (configData && ('drivers' in configData || 'timestamp' in configData)) {
         console.log('Received driver config update via SSE:', configData);
         debouncedFetch();
       }

@@ -1,5 +1,4 @@
-import { generateAccessToken, generateRefreshToken } from "@utils/auth";
-import { type UserType } from "@db/schema";
+import { Auth } from "@utils/auth";
 
 import { User } from "@models/User";
 
@@ -14,8 +13,14 @@ export async function Signin(
     return new Response(error.message, { status: 401 });
   }
 
-  const accessToken = generateAccessToken(user.public);
-  const refreshToken = generateRefreshToken(user.public);
+  // Convert user to AuthUser format (string ID, no password)
+  const authUser = {
+    ...user.public,
+    id: user.id.toString(), // Convert number ID to string for JWT
+  };
+  
+  const accessToken = Auth.generateAccessToken(authUser);
+  const refreshToken = Auth.generateRefreshToken(authUser);
 
   const reresh_route = "/api/refresh";
   const maxAge = 604800;

@@ -1,8 +1,13 @@
-import { BaseDriver, type WhitelistEntry, type WhitelistOptions, type WhitelistStats } from './BaseDriver';
-import { DnsWhitelist } from '@src/models/DnsWhitelist';
+import {
+  BaseDriver,
+  type WhitelistEntry,
+  type WhitelistOptions,
+  type WhitelistStats,
+} from "./BaseDriver";
+import { DnsWhitelist } from "@src/models/DnsWhitelist";
 
 export class SQLiteDriver extends BaseDriver {
-  static readonly DRIVER_NAME = 'sqlite';
+  static override readonly DRIVER_NAME = "sqlite";
 
   constructor(options: WhitelistOptions = {}) {
     super(options);
@@ -34,7 +39,7 @@ export class SQLiteDriver extends BaseDriver {
 
   async isAllowed(domain: string): Promise<boolean> {
     const normalizedDomain = this.normalizeDomain(domain);
-    
+
     // Check exact match first
     if (await DnsWhitelist.contains(normalizedDomain)) {
       return true;
@@ -55,7 +60,7 @@ export class SQLiteDriver extends BaseDriver {
 
   async getAllowingRule(domain: string): Promise<WhitelistEntry | null> {
     const normalizedDomain = this.normalizeDomain(domain);
-    
+
     // Check exact match first
     const exactMatch = await DnsWhitelist.getAllowingRule(normalizedDomain);
     if (exactMatch) {

@@ -1,8 +1,13 @@
-import { BaseDriver, type WhitelistEntry, type WhitelistOptions, type WhitelistStats } from './BaseDriver';
+import {
+  BaseDriver,
+  type WhitelistEntry,
+  type WhitelistOptions,
+  type WhitelistStats,
+} from "./BaseDriver";
 
 export class InMemoryDriver extends BaseDriver {
-  static readonly DRIVER_NAME = 'inmemory';
-  
+  static override readonly DRIVER_NAME = "inmemory";
+
   private entries = new Map<string, WhitelistEntry>();
 
   constructor(options: WhitelistOptions = {}) {
@@ -11,13 +16,13 @@ export class InMemoryDriver extends BaseDriver {
 
   async add(domain: string, reason?: string, category?: string): Promise<void> {
     const normalizedDomain = this.normalizeDomain(domain);
-    
+
     const entry: WhitelistEntry = {
       domain: normalizedDomain,
       reason,
-      addedAt: new Date(),
-      source: 'manual',
-      category
+      addedAt: Date.now(),
+      source: "manual",
+      category,
     };
 
     this.entries.set(normalizedDomain, entry);
@@ -35,12 +40,12 @@ export class InMemoryDriver extends BaseDriver {
 
   async list(category?: string): Promise<WhitelistEntry[]> {
     const allEntries = Array.from(this.entries.values());
-    
+
     if (category) {
-      return allEntries.filter(entry => entry.category === category);
+      return allEntries.filter((entry) => entry.category === category);
     }
-    
-    return allEntries.sort((a, b) => b.addedAt.getTime() - a.addedAt.getTime());
+
+    return allEntries.sort((a, b) => b.addedAt - a.addedAt);
   }
 
   async clear(): Promise<void> {
@@ -49,7 +54,7 @@ export class InMemoryDriver extends BaseDriver {
 
   async isAllowed(domain: string): Promise<boolean> {
     const normalizedDomain = this.normalizeDomain(domain);
-    
+
     // Check exact match first
     if (this.entries.has(normalizedDomain)) {
       return true;
@@ -67,7 +72,7 @@ export class InMemoryDriver extends BaseDriver {
 
   async getAllowingRule(domain: string): Promise<WhitelistEntry | null> {
     const normalizedDomain = this.normalizeDomain(domain);
-    
+
     // Check exact match first
     const exactMatch = this.entries.get(normalizedDomain);
     if (exactMatch) {
@@ -86,19 +91,19 @@ export class InMemoryDriver extends BaseDriver {
 
   async import(entries: WhitelistEntry[]): Promise<number> {
     let imported = 0;
-    
+
     for (const entry of entries) {
       const normalizedDomain = this.normalizeDomain(entry.domain);
       if (!this.entries.has(normalizedDomain)) {
         this.entries.set(normalizedDomain, {
           ...entry,
           domain: normalizedDomain,
-          source: 'import'
+          source: "import",
         });
         imported++;
       }
     }
-    
+
     return imported;
   }
 
@@ -110,21 +115,22 @@ export class InMemoryDriver extends BaseDriver {
     const entries = Array.from(this.entries.values());
     const now = Date.now();
     const oneDayAgo = now - 24 * 60 * 60 * 1000;
-    
+
     const categories: Record<string, number> = {};
     const sources: Record<string, number> = {};
     let recentlyAdded = 0;
 
     for (const entry of entries) {
       // Count categories
-      const category = entry.category || 'uncategorized';
+      const category = entry.category || "uncategorized";
       categories[category] = (categories[category] || 0) + 1;
-      
+
       // Count sources
-      sources[entry.source] = (sources[entry.source] || 0) + 1;
-      
+      const source = entry.source || "unknown";
+      sources[source] = (sources[source] || 0) + 1;
+
       // Count recent additions
-      if (entry.addedAt.getTime() > oneDayAgo) {
+      if (entry.addedAt > oneDayAgo) {
         recentlyAdded++;
       }
     }
@@ -133,7 +139,7 @@ export class InMemoryDriver extends BaseDriver {
       totalEntries: entries.length,
       categories,
       sources,
-      recentlyAdded
+      recentlyAdded,
     };
   }
 

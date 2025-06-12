@@ -1,4 +1,5 @@
 import { DNSProxyServer, type DNSServerDrivers } from "./server";
+import { tryAsync } from '@src/utils/try';
 import { dnsResolver } from "./resolver";
 import {
   NextDNSProvider,
@@ -27,23 +28,23 @@ class UDPServerManager {
   }
 
   private async initializeConfig(): Promise<void> {
-    try {
-      this.persistentConfig = await this.configService.loadConfig();
+    const [configResult, configError] = await tryAsync(async () => {
+      const persistentConfig = await this.configService.loadConfig();
       
       // Apply server configuration
-      this.currentNextDnsConfigId = this.persistentConfig.server.nextdnsConfigId;
+      const nextdnsConfigId = persistentConfig.server.nextdnsConfigId;
       
       // Create driver instances from persistent config
       const drivers = {
-        logs: await createDriverInstance('logs', this.persistentConfig.drivers.logs.type, this.persistentConfig.drivers.logs.options),
-        cache: await createDriverInstance('caches', this.persistentConfig.drivers.cache.type, this.persistentConfig.drivers.cache.options),
-        blacklist: await createDriverInstance('blacklist', this.persistentConfig.drivers.blacklist.type, this.persistentConfig.drivers.blacklist.options),
-        whitelist: await createDriverInstance('whitelist', this.persistentConfig.drivers.whitelist.type, this.persistentConfig.drivers.whitelist.options),
+        logs: await createDriverInstance('logs', persistentConfig.drivers.logs.type, persistentConfig.drivers.logs.options),
+        cache: await createDriverInstance('caches', persistentConfig.drivers.cache.type, persistentConfig.drivers.cache.options),
+        blacklist: await createDriverInstance('blacklist', persistentConfig.drivers.blacklist.type, persistentConfig.drivers.blacklist.options),
+        whitelist: await createDriverInstance('whitelist', persistentConfig.drivers.whitelist.type, persistentConfig.drivers.whitelist.options),
       };
 
       // Initialize providers
       const providers = [
-        new NextDNSProvider(this.currentNextDnsConfigId || config.NEXTDNS_CONFIG_ID),
+        new NextDNSProvider(nextdnsConfigId || config.NEXTDNS_CONFIG_ID),
         new CloudflareProvider(),
         new GoogleProvider(),
         new OpenDNSProvider(),
@@ -53,9 +54,11 @@ class UDPServerManager {
       // Initialize the singleton DNS resolver
       await dnsResolver.initialize(providers, drivers);
       
-      console.log('DNS configuration loaded from persistent storage');
-    } catch (error) {
-      console.warn('Failed to load persistent DNS config, using defaults:', error);
+      return { persistentConfig, nextdnsConfigId };
+    });
+    
+    if (configError) {
+      console.warn('Failed to load persistent DNS config, using defaults:', configError);
       
       // Initialize with defaults
       const providers = [
@@ -67,6 +70,10 @@ class UDPServerManager {
       ];
 
       await dnsResolver.initialize(providers);
+    } else {
+      this.persistentConfig = configResult.persistentConfig;
+      this.currentNextDnsConfigId = configResult.nextdnsConfigId;
+      console.log('DNS configuration loaded from persistent storage');
     }
   }
 
@@ -136,16 +143,18 @@ class UDPServerManager {
       nextdnsConfigId?: string;
     }
   ): Promise<void> {
-    try {
+    const [, saveError] = await tryAsync(() => {
       // Save server configuration
-      await this.configService.saveServerConfig({
+      return this.configService.saveServerConfig({
         port,
         nextdnsConfigId: this.currentNextDnsConfigId,
         enableWhitelist: options?.enableWhitelist ?? this.persistentConfig?.server.enableWhitelist ?? false,
         secondaryDns: options?.secondaryDns as any ?? this.persistentConfig?.server.secondaryDns ?? 'cloudflare',
       });
-    } catch (error) {
-      console.warn('Failed to save UDP server configuration:', error);
+    });
+    
+    if (saveError) {
+      console.warn('Failed to save UDP server configuration:', saveError);
     }
   }
 
@@ -208,10 +217,9 @@ class UDPServerManager {
     dnsResolver.updateProviders(providers);
     
     // Save NextDNS config ID to persistent storage
-    try {
-      await this.configService.saveServerConfig({ nextdnsConfigId: configId });
-    } catch (error) {
-      console.warn('Failed to save NextDNS config ID:', error);
+    const [, saveError] = await tryAsync(() => this.configService.saveServerConfig({ nextdnsConfigId: configId }));
+    if (saveError) {
+      console.warn('Failed to save NextDNS config ID:', saveError);
     }
     
     this.notifyConfigChange();
@@ -230,7 +238,7 @@ class UDPServerManager {
     dnsResolver.setDrivers(drivers);
     
     // Save driver configuration changes to persistent storage
-    try {
+    const [, saveError] = await tryAsync(async () => {
       const currentDrivers = dnsResolver.getDrivers();
       const driversConfig = {
         logs: { type: (currentDrivers.logs?.constructor as any)?.DRIVER_NAME || 'console', options: {} },
@@ -239,8 +247,10 @@ class UDPServerManager {
         whitelist: { type: (currentDrivers.whitelist?.constructor as any)?.DRIVER_NAME || 'inmemory', options: {} },
       };
       await this.configService.saveDriversConfig(driversConfig);
-    } catch (error) {
-      console.warn('Failed to save driver configuration:', error);
+    });
+    
+    if (saveError) {
+      console.warn('Failed to save driver configuration:', saveError);
     }
     
     this.notifyConfigChange();

@@ -2,9 +2,10 @@ import type { BlacklistEntry, BlacklistOptions, BlacklistStats } from './BaseDri
 import { BaseDriver } from './BaseDriver';
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { dirname } from 'path';
+import { tryAsync, trySync } from '@src/utils/try';
 
 export class FileDriver extends BaseDriver {
-  static readonly DRIVER_NAME = 'file';
+  static override readonly DRIVER_NAME = 'file';
   
   private filePath: string;
   private entries = new Map<string, BlacklistEntry>();
@@ -18,21 +19,25 @@ export class FileDriver extends BaseDriver {
   private async ensureLoaded(): Promise<void> {
     if (this.loaded) return;
     
-    try {
+    const [, error] = await tryAsync(async () => {
       await this.ensureDirectoryExists();
       const content = await readFile(this.filePath, 'utf8');
-      const data = JSON.parse(content) as BlacklistEntry[];
+      const [data, parseError] = trySync(() => JSON.parse(content) as BlacklistEntry[]);
+      
+      if (parseError) {
+        throw parseError;
+      }
       
       for (const entry of data) {
         this.entries.set(entry.domain, {
           ...entry,
-          addedAt: new Date(entry.addedAt)
+          addedAt: typeof entry.addedAt === 'number' ? entry.addedAt : new Date(entry.addedAt).getTime()
         });
       }
-    } catch (error) {
-      if ((error as any)?.code !== 'ENOENT') {
-        console.warn('Failed to load blacklist from file:', error);
-      }
+    });
+    
+    if (error && (error as any)?.code !== 'ENOENT') {
+      console.warn('Failed to load blacklist from file:', error);
     }
     
     this.loaded = true;
@@ -52,7 +57,7 @@ export class FileDriver extends BaseDriver {
     const entry: BlacklistEntry = {
       domain: normalizedDomain,
       reason,
-      addedAt: new Date(),
+      addedAt: Date.now(),
       source: 'manual',
       category
     };
@@ -90,7 +95,7 @@ export class FileDriver extends BaseDriver {
       return allEntries.filter(entry => entry.category === category);
     }
     
-    return allEntries.sort((a, b) => b.addedAt.getTime() - a.addedAt.getTime());
+    return allEntries.sort((a, b) => b.addedAt - a.addedAt);
   }
 
   async clear(): Promise<void> {
@@ -151,7 +156,7 @@ export class FileDriver extends BaseDriver {
           ...entry,
           domain: normalizedDomain,
           source: 'import',
-          addedAt: new Date(entry.addedAt)
+          addedAt: typeof entry.addedAt === 'number' ? entry.addedAt : new Date(entry.addedAt).getTime()
         });
         imported++;
       }
@@ -186,10 +191,11 @@ export class FileDriver extends BaseDriver {
       categories[category] = (categories[category] || 0) + 1;
       
       // Count sources
-      sources[entry.source] = (sources[entry.source] || 0) + 1;
+      const source = entry.source || 'unknown';
+      sources[source] = (sources[source] || 0) + 1;
       
       // Count recent additions
-      if (entry.addedAt.getTime() > oneDayAgo) {
+      if (entry.addedAt > oneDayAgo) {
         recentlyAdded++;
       }
     }

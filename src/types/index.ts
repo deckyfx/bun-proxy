@@ -10,7 +10,7 @@ export type ProxyRoute = {
 export type Routes = Record<string, ProxyRoute>;
 
 // Re-export all domain-specific types
-export * from './dns';
+export * from './dns-unified';
 export * from './auth';
 export * from './user';
 export * from './system';

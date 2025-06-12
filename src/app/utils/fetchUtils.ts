@@ -1,5 +1,6 @@
 import { jwtDecode } from "jwt-decode";
 import { useSnackbarStore } from "@app/stores/snackbarStore";
+import { tryAsync, trySync, tryParse } from "@src/utils/try";
 
 export interface ApiResponse<T = any> {
   success: boolean;
@@ -66,18 +67,23 @@ class FetchClient {
       return null;
     }
 
-    try {
-      const { exp } = jwtDecode<{ exp: number }>(accessToken);
-      // Check if token expires in the next 30 seconds
-      if (Date.now() >= (exp - 30) * 1000) {
-        accessToken = await this.refreshAccessToken();
-      }
-    } catch {
-      try {
-        accessToken = await this.refreshAccessToken();
-      } catch {
+    const [decoded, decodeError] = trySync(() => jwtDecode<{ exp: number }>(accessToken!));
+    
+    if (decodeError) {
+      const [refreshed, refreshError] = await tryAsync(() => this.refreshAccessToken());
+      if (refreshError) {
         return null;
       }
+      return refreshed;
+    }
+    
+    // Check if token expires in the next 30 seconds
+    if (Date.now() >= (decoded.exp - 30) * 1000) {
+      const [refreshed, refreshError] = await tryAsync(() => this.refreshAccessToken());
+      if (refreshError) {
+        return null;
+      }
+      accessToken = refreshed;
     }
 
     return accessToken;
@@ -87,16 +93,15 @@ class FetchClient {
     if (!response.ok) {
       let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
 
-      try {
-        const errorData = await response.json();
+      const [errorData, jsonError] = await tryAsync(() => response.json());
+      if (!jsonError && errorData) {
         if (errorData.error) {
           errorMessage = errorData.error;
         } else if (errorData.message) {
           errorMessage = errorData.message;
         }
-      } catch {
-        // If we can't parse JSON, use the status text
       }
+      // If we can't parse JSON, use the status text
 
       throw new Error(errorMessage);
     }
@@ -120,7 +125,7 @@ class FetchClient {
       ...fetchOptions
     } = options;
 
-    try {
+    const [data, error] = await tryAsync(async () => {
       let headers: Record<string, string> = {
         "Content-Type": "application/json",
         ...((fetchOptions.headers as Record<string, string>) || {}),
@@ -149,9 +154,10 @@ class FetchClient {
       }
 
       return data;
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Request failed";
+    });
+    
+    if (error) {
+      const errorMessage = error.message || "Request failed";
 
       if (showErrors) {
         useSnackbarStore.getState().showAlert(errorMessage, "Request Error");
@@ -159,6 +165,8 @@ class FetchClient {
 
       throw error;
     }
+    
+    return data;
   }
 
   // HTTP methods - authentication included by default, use bypassAuth: true to skip

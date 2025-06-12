@@ -1,13 +1,14 @@
 import { Button } from "@app_components/index";
 import { useAuthStore } from "@app_stores/authStore";
+import { tryAsync } from '@src/utils/try';
 
 export function TopNavBar() {
   const { user, logout } = useAuthStore();
 
   const handleLogout = async () => {
-    try {
-      await logout();
-    } catch (error) {
+    const [, error] = await tryAsync(logout);
+    
+    if (error) {
       console.error("Logout error:", error);
     }
   };

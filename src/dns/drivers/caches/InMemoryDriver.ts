@@ -1,9 +1,10 @@
-import { BaseDriver, type CacheEntry, type CacheOptions } from './BaseDriver';
+import { BaseDriver, type CacheOptions } from "./BaseDriver";
+import type { CachedDnsResponse } from "@src/types/dns-unified";
 
-export class InMemoryDriver<T = any> extends BaseDriver<T> {
-  static readonly DRIVER_NAME = 'inmemory';
-  
-  private cache = new Map<string, CacheEntry<T>>();
+export class InMemoryDriver extends BaseDriver {
+  static override readonly DRIVER_NAME = "inmemory";
+
+  private cache = new Map<string, CachedDnsResponse>();
   private cleanupTimer?: Timer;
 
   constructor(options: CacheOptions = {}) {
@@ -11,9 +12,9 @@ export class InMemoryDriver<T = any> extends BaseDriver<T> {
     this.startCleanupTimer();
   }
 
-  async get(key: string): Promise<T | null> {
+  async get(key: string): Promise<CachedDnsResponse | null> {
     const entry = this.cache.get(key);
-    
+
     if (!entry) {
       this.recordMiss();
       return null;
@@ -25,28 +26,24 @@ export class InMemoryDriver<T = any> extends BaseDriver<T> {
       return null;
     }
 
-    // Update access tracking
-    entry.accessCount++;
-    entry.lastAccessed = Date.now();
-    this.cache.set(key, entry);
-    
     this.recordHit();
-    return entry.value;
+    return entry;
   }
 
-  async set(key: string, value: T, ttl?: number): Promise<void> {
-    const effectiveTtl = ttl || this.options.defaultTtl!;
-    const now = Date.now();
-    
-    const entry: CacheEntry<T> = {
-      value,
-      ttl: effectiveTtl,
-      createdAt: now,
-      accessCount: 0,
-      lastAccessed: now
-    };
+  async set(
+    key: string,
+    value: CachedDnsResponse,
+    ttl?: number
+  ): Promise<void> {
+    // Use the TTL from the CachedDnsResponse or override with provided TTL
+    if (ttl !== undefined) {
+      // Override the cache TTL if specified
+      const now = Date.now();
+      value.cache.ttl = ttl;
+      value.cache.expiresAt = now + ttl;
+    }
 
-    this.cache.set(key, entry);
+    this.cache.set(key, value);
 
     // Check if we need to evict entries
     if (this.cache.size > this.options.maxSize!) {
@@ -65,12 +62,12 @@ export class InMemoryDriver<T = any> extends BaseDriver<T> {
   async has(key: string): Promise<boolean> {
     const entry = this.cache.get(key);
     if (!entry) return false;
-    
+
     if (this.isExpired(entry)) {
       this.cache.delete(key);
       return false;
     }
-    
+
     return true;
   }
 
@@ -91,7 +88,7 @@ export class InMemoryDriver<T = any> extends BaseDriver<T> {
   async evictExpired(): Promise<number> {
     const now = Date.now();
     let evicted = 0;
-    
+
     for (const [key, entry] of this.cache.entries()) {
       if (this.isExpired(entry)) {
         this.cache.delete(key);
@@ -99,17 +96,18 @@ export class InMemoryDriver<T = any> extends BaseDriver<T> {
         this.recordEviction();
       }
     }
-    
+
     return evicted;
   }
 
   async evictLRU(count: number = 1): Promise<number> {
     if (this.cache.size === 0) return 0;
-    
-    // Sort by last accessed time (oldest first)
-    const entries = Array.from(this.cache.entries())
-      .sort(([, a], [, b]) => a.lastAccessed - b.lastAccessed);
-    
+
+    // Sort by timestamp (oldest first)
+    const entries = Array.from(this.cache.entries()).sort(
+      ([, a], [, b]) => a.cache.timestamp - b.cache.timestamp
+    );
+
     let evicted = 0;
     for (let i = 0; i < Math.min(count, entries.length); i++) {
       const [key] = entries[i]!;
@@ -117,7 +115,7 @@ export class InMemoryDriver<T = any> extends BaseDriver<T> {
       evicted++;
       this.recordEviction();
     }
-    
+
     return evicted;
   }
 

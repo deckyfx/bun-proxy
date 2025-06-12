@@ -1,12 +1,13 @@
 import { User } from "@src/models/User";
 import { Auth, type AuthUser } from "@utils/auth";
+import { tryAsync } from "@src/utils/try";
 
 interface DeleteUserRequest {
   id: number;
 }
 
 export async function DeleteUser(req: Request, currentUser: AuthUser): Promise<Response> {
-  try {
+  const [result, error] = await tryAsync(async () => {
     const body: DeleteUserRequest = await req.json();
     
     // Validate required fields
@@ -69,16 +70,20 @@ export async function DeleteUser(req: Request, currentUser: AuthUser): Promise<R
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
-  } catch (error) {
+  });
+
+  if (error) {
     console.error("Failed to delete user:", error);
     return new Response(JSON.stringify({ 
       error: "Failed to delete user",
-      details: error instanceof Error ? error.message : String(error)
+      details: error.message
     }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
     });
   }
+
+  return result;
 }
 
 export default {

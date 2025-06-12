@@ -2,7 +2,7 @@ import type { BaseDriver, BlacklistEntry, BlacklistOptions, BlacklistStats } fro
 import { BaseDriver as BaseDriverClass } from './BaseDriver';
 
 export class InMemoryDriver extends BaseDriverClass {
-  static readonly DRIVER_NAME = 'inmemory';
+  static override readonly DRIVER_NAME = 'inmemory';
   
   private entries = new Map<string, BlacklistEntry>();
 
@@ -16,7 +16,7 @@ export class InMemoryDriver extends BaseDriverClass {
     const entry: BlacklistEntry = {
       domain: normalizedDomain,
       reason,
-      addedAt: new Date(),
+      addedAt: Date.now(),
       source: 'manual',
       category
     };
@@ -41,7 +41,7 @@ export class InMemoryDriver extends BaseDriverClass {
       return allEntries.filter(entry => entry.category === category);
     }
     
-    return allEntries.sort((a, b) => b.addedAt.getTime() - a.addedAt.getTime());
+    return allEntries.sort((a, b) => b.addedAt - a.addedAt);
   }
 
   async clear(): Promise<void> {
@@ -122,10 +122,11 @@ export class InMemoryDriver extends BaseDriverClass {
       categories[category] = (categories[category] || 0) + 1;
       
       // Count sources
-      sources[entry.source] = (sources[entry.source] || 0) + 1;
+      const source = entry.source || 'unknown';
+      sources[source] = (sources[source] || 0) + 1;
       
       // Count recent additions
-      if (entry.addedAt.getTime() > oneDayAgo) {
+      if (entry.addedAt > oneDayAgo) {
         recentlyAdded++;
       }
     }
