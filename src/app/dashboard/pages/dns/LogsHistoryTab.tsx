@@ -1,4 +1,5 @@
-import { Button, Select, Table, type TableColumn } from "@app/components/index";
+import { RippleButton, Select } from "@app/components/index";
+import { Table, type TableColumn } from "@app/components/index";
 import type { LogEntry } from "@src/types/dns-unified";
 
 interface LogsHistoryTabProps {
@@ -42,31 +43,30 @@ export default function LogsHistoryTab({
           <span className="font-medium">Log History</span>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
+          <RippleButton
+            variant="soft"
+            color="gray"
             onClick={onClearFilters}
-            className="text-gray-600"
           >
-            <span className="material-icons text-sm mr-1">clear</span>
-            Clear Filters
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
+            <span className="material-icons">filter_list_off</span>
+            <span>Clear Filters</span>
+          </RippleButton>
+          <RippleButton
+            variant="soft"
+            color="green"
             onClick={onFetchHistory}
           >
-            <span className="material-icons text-sm mr-1">refresh</span>
-            Refresh
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
+            <span className="material-icons">refresh</span>
+            <span>Refresh</span>
+          </RippleButton>
+          <RippleButton
+            variant="soft"
+            color="blue"
             onClick={onFetchHistory}
           >
-            <span className="material-icons text-sm mr-1">search</span>
-            Apply
-          </Button>
+            <span className="material-icons">search</span>
+            <span>Apply</span>
+          </RippleButton>
         </div>
       </div>
 
@@ -78,7 +78,7 @@ export default function LogsHistoryTab({
             value={filters.type}
             onChange={(value) => onFiltersChange({ type: value })}
             options={[
-              { value: "", label: "All Types" },
+              { value: "*", label: "All Types" },
               { value: "request", label: "Request" },
               { value: "response", label: "Response" },
               { value: "server_event", label: "Server Event" },
@@ -89,7 +89,7 @@ export default function LogsHistoryTab({
             value={filters.level}
             onChange={(value) => onFiltersChange({ level: value })}
             options={[
-              { value: "", label: "All Levels" },
+              { value: "*", label: "All Levels" },
               { value: "info", label: "Info" },
               { value: "warn", label: "Warn" },
               { value: "error", label: "Error" },
@@ -100,7 +100,7 @@ export default function LogsHistoryTab({
             value={filters.domain}
             onChange={(value) => onFiltersChange({ domain: value })}
             options={[
-              { value: "", label: "All Domains" },
+              { value: "*", label: "All Domains" },
               { value: "google.com", label: "google.com" },
               { value: "cloudflare.com", label: "cloudflare.com" },
             ]}
@@ -110,7 +110,7 @@ export default function LogsHistoryTab({
             value={filters.provider}
             onChange={(value) => onFiltersChange({ provider: value })}
             options={[
-              { value: "", label: "All Providers" },
+              { value: "*", label: "All Providers" },
               { value: "cloudflare", label: "Cloudflare" },
               { value: "google", label: "Google" },
               { value: "cache", label: "Cache" },
@@ -122,7 +122,7 @@ export default function LogsHistoryTab({
             value={filters.success}
             onChange={(value) => onFiltersChange({ success: value })}
             options={[
-              { value: "", label: "All Results" },
+              { value: "*", label: "All Results" },
               { value: "true", label: "Success" },
               { value: "false", label: "Failed" },
             ]}

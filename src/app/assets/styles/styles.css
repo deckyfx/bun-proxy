@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "@radix-ui/themes/styles.css";
 
 /* Custom Password Dots */
 .password-dots {
@@ -10,6 +11,121 @@
 /* Clickable cursor utility */
 .clickable {
   cursor: pointer;
+}
+
+/* Auto cursor for Radix UI buttons */
+.rt-Button {
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  transition: all 0.15s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.rt-Button:hover {
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15), 0 2px 4px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  transform: translateY(-1px);
+}
+
+.rt-Button:active {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1), inset 0 2px 4px rgba(0, 0, 0, 0.1);
+  transform: translateY(0);
+}
+
+/* Ripple Button styles */
+.ripple-button {
+  position: relative;
+  overflow: hidden;
+  /* Match floating input sizing */
+  font-size: 1rem !important;
+  padding: 0.875rem 1.5rem !important;
+  min-height: 3rem !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* Icon alignment in buttons */
+.ripple-button .material-icons {
+  font-size: 1.125rem !important;
+  line-height: 1 !important;
+}
+
+.ripple-effect {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.6);
+  transform: scale(0);
+  animation: ripple-animation 0.6s linear;
+  pointer-events: none;
+}
+
+@keyframes ripple-animation {
+  to {
+    transform: scale(4);
+    opacity: 0;
+  }
+}
+
+/* Loading Button styles */
+.loading-button {
+  position: relative;
+  cursor: not-allowed !important;
+}
+
+.loading-spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid transparent;
+  border-top: 2px solid currentColor;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-right: 0.5rem;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* Floating Label Input styles */
+.floating-input {
+  /* Larger input size */
+  font-size: 1rem !important;
+  padding: 0.875rem 0.75rem !important;
+  min-height: 3rem !important;
+}
+
+/* Icon padding for inputs */
+.floating-input.icon-left {
+  padding-left: 2.5rem !important;
+}
+
+.floating-input.icon-right {
+  padding-right: 2.5rem !important;
+}
+
+/* Floating Label TextArea styles */
+.floating-input[data-radix-collection-item],
+textarea.floating-input {
+  padding-top: 1.5rem !important;
+  padding-bottom: 0.5rem !important;
+  resize: vertical !important;
+  min-height: 6rem !important;
+  max-height: 12rem !important;
+  overflow: auto !important;
+}
+
+/* Select Component styles - Match input and button sizing */
+.rt-SelectTrigger {
+  font-size: 1rem !important;
+  padding: 0.875rem 0.75rem !important;
+  min-height: 3rem !important;
 }
 
 /* Dialog centering and backdrop */

@@ -53,6 +53,7 @@ interface DNSStore {
   testResult: string;
   connected: boolean;
   initialConnectionEstablished: boolean;
+  applyLoading: boolean;
   
   // Actions
   fetchStatus: () => Promise<void>;
@@ -66,7 +67,8 @@ interface DNSStore {
   stopServer: () => Promise<void>;
   toggleServer: () => Promise<void>;
   testDnsConfig: (configId: string) => Promise<void>;
-  updateConfig: (updates: Partial<DNSConfig>) => void;
+  updateConfig: (updates: Partial<DNSConfig>) => Promise<void>;
+  applyConfig: () => Promise<void>;
   connectSSE: () => void;
   disconnectSSE: () => void;
 }
@@ -102,6 +104,7 @@ export const useDNSStore = create<DNSStore>((set, get) => ({
   testResult: '',
   connected: false,
   initialConnectionEstablished: false,
+  applyLoading: false,
 
   // Actions
   fetchStatus: async () => {
@@ -197,16 +200,55 @@ export const useDNSStore = create<DNSStore>((set, get) => ({
         testResult: `❌ Error: ${error.message || 'Test failed'}` 
       });
     } else {
-      set({ testResult: `✅ Success: ${(data as any).result || 'DNS resolution working'}` });
+      // Check if the test actually succeeded
+      const response = data as any;
+      if (response.success === false) {
+        set({ 
+          testResult: `❌ Error: ${response.error || 'DNS test failed'}` 
+        });
+      } else {
+        set({ 
+          testResult: `✅ Success: ${response.result || 'DNS resolution working'}` 
+        });
+      }
     }
     
     set({ testLoading: false });
   },
 
-  updateConfig: (updates) => {
+  updateConfig: async (updates) => {
+    // Update local state immediately for responsive UI
     set((state) => ({
       config: { ...state.config, ...updates }
     }));
+
+    // Save to backend persistent storage
+    const [, error] = await tryAsync(() => api.put('/api/dns/config', updates));
+    if (error) {
+      console.error('Failed to save DNS config to backend:', error);
+      // Optionally revert local changes if backend save fails
+      // For now, just log the error but keep local changes
+    }
+  },
+
+  applyConfig: async () => {
+    set({ applyLoading: true });
+    
+    const [data, error] = await tryAsync(() => api.post('/api/dns/apply', undefined, {
+      showSuccess: true,
+      successMessage: 'DNS configuration applied successfully. Resolver updated with new settings.'
+    }));
+    
+    if (error) {
+      console.error('Failed to apply DNS config:', error);
+      // Don't re-throw to prevent uncaught errors
+    } else {
+      if ((data as DNSToggleResponse).status) {
+        set({ status: (data as DNSToggleResponse).status! });
+      }
+    }
+    
+    set({ applyLoading: false });
   },
 
   connectSSE: () => {

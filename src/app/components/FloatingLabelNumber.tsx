@@ -2,16 +2,19 @@ import React, { useState, useRef, useEffect } from "react";
 import { TextField } from "@radix-ui/themes";
 import { cn } from "@app/utils/cn";
 
-interface FloatingLabelInputProps extends Omit<React.ComponentProps<typeof TextField.Root>, 'placeholder'> {
+interface FloatingLabelNumberProps extends Omit<React.ComponentProps<typeof TextField.Root>, 'placeholder' | 'type'> {
   label: string;
   id?: string;
+  min?: number;
+  max?: number;
+  step?: number;
   status?: 'error' | 'warning' | 'success';
   message?: string;
   icon?: React.ReactNode;
   iconPosition?: 'left' | 'right';
 }
 
-export function FloatingLabelInput({ label, id, className, status, message, icon, iconPosition = 'left', ...props }: FloatingLabelInputProps) {
+export function FloatingLabelNumber({ label, id, min, max, step, className, status, message, icon, iconPosition = 'left', ...props }: FloatingLabelNumberProps) {
   const [isFocused, setIsFocused] = useState(false);
   const [hasValue, setHasValue] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -78,6 +81,10 @@ export function FloatingLabelInput({ label, id, className, status, message, icon
         <TextField.Root
           ref={inputRef}
           id={id}
+          type="number"
+          min={min}
+          max={max}
+          step={step}
           onFocus={handleFocus}
           onBlur={handleBlur}
           onChange={handleChange}

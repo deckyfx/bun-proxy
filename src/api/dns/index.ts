@@ -3,6 +3,7 @@ import config from './config';
 import start from './start';
 import stop from './stop';
 import toggle from './toggle';
+import apply from './apply';
 import test from './test';
 import driver from './driver';
 import log from './log';
@@ -17,6 +18,7 @@ export default {
   ...start,
   ...stop,
   ...toggle,
+  ...apply,
   ...test,
   ...driver,
   ...log,

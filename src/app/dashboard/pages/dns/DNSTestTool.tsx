@@ -1,9 +1,4 @@
-import {
-  Button,
-  Card,
-  FloatingLabelInput,
-  Select,
-} from "@app/components/index";
+import { FloatingLabelInput, RippleButton, CollapsibleCard, Select } from "@app/components/index";
 import { useState } from "react";
 import { useDNSStore } from "@app/stores/dnsStore";
 import { useDNSTestStore } from "@app/stores/dnsTestStore";
@@ -42,61 +37,71 @@ export default function DNSTestTool() {
   };
 
   return (
-    <Card title="DNS Test Tool">
+    <CollapsibleCard title="DNS Test Tool">
       <div className="space-y-6">
         {/* Test Configuration */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <FloatingLabelInput
-            label="Domain to Test"
-            value={testDomain}
-            onChange={(e) => setTestDomain(e.target.value)}
-            placeholder="example.com"
-          />
+        <div className="flex flex-wrap items-end gap-4">
+          <div className="flex-1 min-w-[200px]">
+            <FloatingLabelInput
+              label="Domain to Test"
+              value={testDomain}
+              onChange={(e) => setTestDomain(e.target.value)}
+            />
+          </div>
 
-          <Select
-            label="Test Method"
-            value={testMethod}
-            onChange={(value) =>
-              setTestMethod(value as "ALL" | "UDP" | "DoH-GET" | "DoH-POST")
-            }
-            options={[
-              { value: "ALL", label: "All Methods" },
-              { value: "UDP", label: "UDP Query" },
-              { value: "DoH-GET", label: "DoH GET" },
-              { value: "DoH-POST", label: "DoH POST" },
-            ]}
-          />
+          <div className="flex-1 min-w-[200px]">
+            <Select
+              label="Test Method"
+              labelPosition="left"
+              value={testMethod}
+              onChange={(value) =>
+                setTestMethod(value as "ALL" | "UDP" | "DoH-GET" | "DoH-POST")
+              }
+              options={[
+                { value: "ALL", label: "All Methods" },
+                { value: "UDP", label: "UDP Query" },
+                { value: "DoH-GET", label: "DoH GET" },
+                { value: "DoH-POST", label: "DoH POST" },
+              ]}
+            />
+          </div>
 
           <div className="flex gap-2">
-            <Button
-              variant="primary"
+            <RippleButton
+              variant="solid"
+              color="green"
               onClick={runTests}
-              isLoading={isRunning}
+              loading={isRunning}
               disabled={!testDomain.trim()}
-              icon="play_arrow"
-              className="flex-1"
             >
-              Run Test
-            </Button>
-            <Button variant="secondary" onClick={clearResults} icon="clear">
-              Clear
-            </Button>
+              <span className="material-icons">play_arrow</span>
+              <span>Run Test</span>
+            </RippleButton>
+            <RippleButton variant="soft" color="red" onClick={clearResults}>
+              <span className="material-icons">clear_all</span>
+              <span>Clear</span>
+            </RippleButton>
           </div>
         </div>
 
         {/* Quick Test Buttons */}
         <div className="flex gap-2 flex-wrap">
-          {["google.com", "example.com", "github.com", "cloudflare.com"].map(
-            (domain) => (
-              <Button
+          {[
+            { domain: "google.com", icon: "g_translate" },
+            { domain: "example.com", icon: "language" },
+            { domain: "github.com", icon: "code" },
+            { domain: "cloudflare.com", icon: "cloud" }
+          ].map(
+            ({ domain, icon }) => (
+              <RippleButton
                 key={domain}
-                variant="secondary"
-                size="sm"
+                variant="soft"
                 onClick={() => setTestDomain(domain)}
                 className="text-xs"
               >
-                {domain}
-              </Button>
+                <span className="material-icons text-sm">{icon}</span>
+                <span>{domain}</span>
+              </RippleButton>
             )
           )}
         </div>
@@ -174,6 +179,6 @@ export default function DNSTestTool() {
           </div>
         )}
       </div>
-    </Card>
+    </CollapsibleCard>
   );
 }

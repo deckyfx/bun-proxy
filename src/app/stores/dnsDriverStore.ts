@@ -90,7 +90,6 @@ export const useDnsDriverStore = create<DnsDriverStore>((set, get) => ({
     const unsubscribeConfig = sseClient.subscribe('dns/info', (configData) => {
       // Only update if this event specifically relates to driver configuration changes
       if (configData && ('drivers' in configData || 'timestamp' in configData)) {
-        console.log('Received driver config update via SSE:', configData);
         debouncedFetch();
       }
     });

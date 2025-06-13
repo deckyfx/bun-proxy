@@ -241,7 +241,39 @@ class DNSManager {
       console.warn('Failed to save NextDNS config ID:', saveError);
     }
     
+    // Update resolver providers with new NextDNS config (if server is running)
+    if (this.isEnabled && this.server) {
+      await this.updateResolverConfig();
+    }
+    
     this.notifyConfigChange();
+  }
+
+  async updateResolverConfig(): Promise<void> {
+    if (!this.server) {
+      console.warn('Cannot update resolver config: server not running');
+      return;
+    }
+
+    const [, updateError] = await tryAsync(async () => {
+      // Create new providers with current configuration
+      const providers = [
+        new NextDNSProvider(this.currentNextDnsConfigId),
+        new CloudflareProvider(),
+        new GoogleProvider(),
+        new OpenDNSProvider(),
+        new SystemProvider(),
+      ];
+
+      // Update resolver providers dynamically
+      const resolver = this.server!.getResolver();
+      resolver.updateProviders(providers);
+    });
+
+    if (updateError) {
+      console.error('Failed to update resolver configuration:', updateError);
+      throw updateError;
+    }
   }
 
   getPersistentConfig(): DNSPersistentConfig | undefined {

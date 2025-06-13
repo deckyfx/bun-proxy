@@ -1,5 +1,6 @@
-import { Button, FloatingLabelInput, Card, Select, Switch } from "@app_components/index";
-import { useState, useEffect } from "react";
+import { FloatingLabelInput, RippleButton, CollapsibleCard, Select } from "@app/components/index";
+import { Switch } from "@radix-ui/themes";
+import { useEffect } from "react";
 import { useDNSStore } from "@app/stores/dnsStore";
 
 export default function DNSConfig() {
@@ -8,8 +9,10 @@ export default function DNSConfig() {
     config: dnsConfig,
     testLoading,
     testResult,
+    applyLoading,
     testDnsConfig,
     updateConfig,
+    applyConfig,
   } = useDNSStore();
 
   // Initialize and update NextDNS config ID through store
@@ -24,30 +27,28 @@ export default function DNSConfig() {
   };
 
   return (
-    <Card title="Configuration">
+    <CollapsibleCard title="Configuration">
       <div className="space-y-6">
         {/* NextDNS Config ID | Test Button | Result */}
         <div className="flex items-center gap-4">
-          <div className="flex-1">
+          <div className="w-[200px]">
             <FloatingLabelInput
               label="NextDNS Config ID"
-              type="text"
               value={dnsConfig.nextdnsConfigId || ""}
               onChange={(e) => updateConfig({ nextdnsConfigId: e.target.value })}
-              disabled={dnsStatus.enabled}
             />
           </div>
           <div className="flex-shrink-0">
-            <Button
-              variant="secondary"
-              size="md"
+            <RippleButton
+              variant="soft"
+              color="blue"
               onClick={handleTestDnsConfig}
-              isLoading={testLoading}
-              icon="play_arrow"
+              loading={testLoading}
               disabled={!dnsConfig.nextdnsConfigId}
             >
-              Test
-            </Button>
+              <span className="material-icons">cloud</span>
+              <span>Test</span>
+            </RippleButton>
           </div>
           <div className="flex-1">
             {testResult && (
@@ -60,16 +61,18 @@ export default function DNSConfig() {
 
         {/* Enable Whitelist Mode */}
         <div className="space-y-4">
-          <Switch
-            label="Enable Whitelist Mode"
-            checked={dnsConfig.enableWhitelist}
-            onChange={(checked) => {
-              updateConfig({ enableWhitelist: checked });
-            }}
-            disabled={dnsStatus.enabled}
-            tooltip="Whitelist mode allows you to control which domains use NextDNS filtering. Non-whitelisted domains will be resolved using your selected secondary DNS provider, helping you manage NextDNS query limits effectively."
-            tooltipPosition="top"
-          />
+          <div className="flex items-center gap-3">
+            <Switch
+              checked={dnsConfig.enableWhitelist}
+              onCheckedChange={(checked: boolean) => {
+                updateConfig({ enableWhitelist: checked });
+              }}
+              size="2"
+            />
+            <label className="text-sm font-medium text-gray-700">
+              Enable Whitelist Mode
+            </label>
+          </div>
 
           {/* Secondary DNS Resolver - only show when whitelist is enabled */}
           {dnsConfig.enableWhitelist && (
@@ -78,13 +81,10 @@ export default function DNSConfig() {
                 label="Secondary DNS Resolver"
                 value={dnsConfig.secondaryDns}
                 onChange={(value) => {
-                  if (!dnsStatus.enabled) {
-                    updateConfig({
-                      secondaryDns: value as "cloudflare" | "google" | "opendns",
-                    });
-                  }
+                  updateConfig({
+                    secondaryDns: value as "cloudflare" | "google" | "opendns",
+                  });
                 }}
-                disabled={dnsStatus.enabled}
                 options={[
                   { value: "cloudflare", label: "Cloudflare (1.1.1.1)" },
                   { value: "google", label: "Google DNS (8.8.8.8)" },
@@ -94,7 +94,31 @@ export default function DNSConfig() {
             </div>
           )}
         </div>
+
+        {/* Apply Configuration Button - only show when server is running */}
+        {dnsStatus.enabled && (
+          <div className="pt-4 border-t border-gray-200">
+            <div className="flex items-center gap-4">
+              <div className="flex-1">
+                <p className="text-sm text-gray-600">
+                  Apply configuration changes to the DNS resolver without restarting the server.
+                </p>
+              </div>
+              <div className="flex-shrink-0">
+                <RippleButton
+                  variant="solid"
+                  color="green"
+                  onClick={applyConfig}
+                  loading={applyLoading}
+                >
+                  <span className="material-icons">refresh</span>
+                  <span>Apply Config</span>
+                </RippleButton>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
-    </Card>
+    </CollapsibleCard>
   );
 }

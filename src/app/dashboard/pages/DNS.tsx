@@ -41,12 +41,6 @@ export default function DNS() {
   return (
     <PageContainer title="DNS Proxy Server">
       <div className="space-y-6">
-        <div className="p-4 border rounded">
-          <h3>DNS Status: {dnsStatus.enabled ? 'Running' : 'Stopped'}</h3>
-          {dnsStatus.server && (
-            <p>Port: {dnsStatus.server.port}</p>
-          )}
-        </div>
         <DNSControl />
         <DNSConfig />
         <DNSTestTool />

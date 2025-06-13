@@ -1,119 +1,18 @@
-import { useState } from "react";
-import type { UserType } from "@db/schema";
-import { useAuthStore } from "@app_stores/authStore";
-import { Button } from "@app_components/index";
+import { Outlet } from "react-router-dom";
 import { DashboardLayout } from "./layout";
-import { tryAsync } from '@src/utils/try';
+import { SnackbarContainer, DialogContainer, ErrorBoundary } from "@app/components/index";
+import { Theme } from "@radix-ui/themes";
 
-export default function Dashboard() {
-  const [healthResult, setHealthResult] = useState<unknown>(null);
-  const [userResult, setUserResult] = useState<UserType | null>(null);
-  const [loading, setLoading] = useState<{ [key: string]: boolean }>({});
-
-  const { me, health, user, isLoading } = useAuthStore();
-
-  const handleApiCall = async (
-    apiCall: () => Promise<unknown>,
-    resultSetter: (result: unknown) => void,
-    key: string
-  ) => {
-    setLoading((prev) => ({ ...prev, [key]: true }));
-    
-    const [result, error] = await tryAsync(apiCall);
-    
-    if (error) {
-      console.error(`${key} error:`, error);
-      alert(`${key} failed: ${error.message}`);
-    } else {
-      resultSetter(result);
-    }
-    
-    setLoading((prev) => ({ ...prev, [key]: false }));
-  };
-
-
-  const handleMe = async () => {
-    await handleApiCall(
-      async () => {
-        await me();
-        return user;
-      },
-      (result) => setUserResult(result as UserType | null),
-      "me"
-    );
-  };
-
-  const handleHealth = async () => {
-    await handleApiCall(health, setHealthResult, "health");
-  };
-
+export default function DashboardApp() {
   return (
-    <DashboardLayout>
-      <div className="p-8 max-w-4xl mx-auto">
-
-      <div className="mb-8">
-        <h2 className="text-xl font-semibold mb-4">Current User</h2>
-        {user ? (
-          <div className="bg-gray-100 p-4 rounded-lg">
-            <p className="mb-2">
-              <strong>Email:</strong> {user.email}
-            </p>
-            <p className="mb-2">
-              <strong>Name:</strong> {user.name}
-            </p>
-            <p>
-              <strong>ID:</strong> {user.id}
-            </p>
-          </div>
-        ) : (
-          <p className="text-gray-600">No user data available</p>
-        )}
-      </div>
-
-      <div className="flex gap-4 flex-wrap mb-8">
-        <Button
-          onClick={handleMe}
-          disabled={loading.me || isLoading}
-          isLoading={loading.me}
-          icon={!loading.me ? "person" : undefined}
-          variant="primary"
-          size="lg"
-        >
-          {loading.me ? "Loading..." : "Get User Info (/api/me)"}
-        </Button>
-
-        <Button
-          onClick={handleHealth}
-          disabled={loading.health}
-          isLoading={loading.health}
-          icon={!loading.health ? "health_and_safety" : undefined}
-          variant="secondary"
-          size="lg"
-          className="bg-green-600 text-white hover:bg-green-700"
-        >
-          {loading.health ? "Loading..." : "Health Check (/api/health)"}
-        </Button>
-
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <h3 className="text-lg font-semibold mb-3">Me API Result</h3>
-          <div className="bg-gray-50 p-4 rounded-lg min-h-24 font-mono text-sm whitespace-pre-wrap overflow-auto">
-            {userResult ? JSON.stringify(userResult, null, 2) : "No data yet"}
-          </div>
-        </div>
-
-        <div>
-          <h3 className="text-lg font-semibold mb-3">Health API Result</h3>
-          <div className="bg-gray-50 p-4 rounded-lg min-h-24 font-mono text-sm whitespace-pre-wrap overflow-auto">
-            {healthResult
-              ? JSON.stringify(healthResult, null, 2)
-              : "No data yet"}
-          </div>
-        </div>
-      </div>
-      </div>
-    </DashboardLayout>
+    <Theme>
+      <ErrorBoundary>
+        <DashboardLayout>
+          <Outlet />
+          <SnackbarContainer />
+          <DialogContainer />
+        </DashboardLayout>
+      </ErrorBoundary>
+    </Theme>
   );
 }

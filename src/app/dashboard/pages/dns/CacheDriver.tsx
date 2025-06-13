@@ -1,4 +1,5 @@
-import { Button, Card, Select, Table, type TableColumn, FloatingLabelInput } from "@app/components/index";
+import { RippleButton, CollapsibleCard, Select, FloatingLabelInput } from "@app/components/index";
+import { Table, type TableColumn } from "@app/components/index";
 import { useState, useEffect } from "react";
 import { DRIVER_TYPES, type DriversResponse } from "@src/types/driver";
 import type { CachedDnsResponse } from "@src/types/dns-unified";
@@ -261,22 +262,26 @@ export default function CacheDriver({ drivers, loading }: CacheDriverProps) {
             disabled={submitting}
           />
           <div className="flex justify-end space-x-3 mt-6">
-            <Button
+            <RippleButton
               type="button"
-              variant="secondary"
+              variant="soft"
+              color="gray"
               onClick={() => closeDialog(dialogId)}
               disabled={submitting}
             >
-              Cancel
-            </Button>
-            <Button
+              <span className="material-icons">close</span>
+              <span>Cancel</span>
+            </RippleButton>
+            <RippleButton
               type="submit"
-              variant="primary"
-              isLoading={submitting}
+              variant="solid"
+              color="blue"
+              loading={submitting}
               disabled={submitting || !formData.key || !formData.value}
             >
-              Add Entry
-            </Button>
+              <span className="material-icons">add</span>
+              <span>Add Entry</span>
+            </RippleButton>
           </div>
         </form>
       );
@@ -297,10 +302,11 @@ export default function CacheDriver({ drivers, loading }: CacheDriverProps) {
   return (
     <div className="space-y-4">
         {/* Driver Configuration */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-end gap-4">
           <div className="flex-1">
             <Select
               label="Driver Implementation"
+              labelPosition="top"
               value={driverForm.driver}
               onChange={(value) => handleDriverFormChange(value)}
               options={availableDrivers.map((driver: string) => ({
@@ -309,16 +315,15 @@ export default function CacheDriver({ drivers, loading }: CacheDriverProps) {
               }))}
             />
           </div>
-          <div className="flex items-end">
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={handleSetDriver}
-              disabled={!driverForm.driver || loading}
-            >
-              Set Driver
-            </Button>
-          </div>
+          <RippleButton
+            variant="solid"
+            color="blue"
+            onClick={handleSetDriver}
+            disabled={!driverForm.driver || loading}
+          >
+            <span className="material-icons">settings</span>
+            <span>Set Driver</span>
+          </RippleButton>
         </div>
 
         {/* Driver Status */}
@@ -339,34 +344,32 @@ export default function CacheDriver({ drivers, loading }: CacheDriverProps) {
         {/* Actions */}
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <Button
-              variant="secondary"
-              size="sm"
+            <RippleButton
+              variant="soft"
+              color="green"
               onClick={() => fetchCacheContent()}
               disabled={contentLoading}
-              className="text-green-600 hover:text-green-700 hover:bg-green-50 border-green-300"
             >
-              <span className="material-icons text-sm mr-1">refresh</span>
-              {contentLoading ? "Loading..." : "Refresh"}
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
+              <span className="material-icons">refresh</span>
+              <span>{contentLoading ? "Loading..." : "Refresh"}</span>
+            </RippleButton>
+            <RippleButton
+              variant="solid"
+              color="blue"
               onClick={() => showAddDialog()}
-              icon="add"
             >
-              Add Entry
-            </Button>
+              <span className="material-icons">add</span>
+              <span>Add Entry</span>
+            </RippleButton>
           </div>
-          <Button
-            variant="secondary"
-            size="sm"
+          <RippleButton
+            variant="soft"
+            color="red"
             onClick={handleClearCache}
-            className="text-red-600 hover:text-red-700 hover:bg-red-50"
           >
-            <span className="material-icons text-sm mr-1">clear_all</span>
-            Clear Cache
-          </Button>
+            <span className="material-icons">clear_all</span>
+            <span>Clear Cache</span>
+          </RippleButton>
         </div>
 
         {/* Filters */}
@@ -376,16 +379,17 @@ export default function CacheDriver({ drivers, loading }: CacheDriverProps) {
               <span className="material-icons text-lg">filter_list</span>
               Filters
             </h4>
-            <Button
-              variant="secondary"
-              size="sm"
+            <RippleButton
+              variant="soft"
+              color="gray"
               onClick={() => {
                 setFilters({ key: '' });
                 fetchCacheContent({ key: '' });
               }}
             >
-              Clear Filters
-            </Button>
+              <span className="material-icons">filter_list_off</span>
+              <span>Clear Filters</span>
+            </RippleButton>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <FloatingLabelInput
@@ -394,14 +398,15 @@ export default function CacheDriver({ drivers, loading }: CacheDriverProps) {
               onChange={(e) => setFilters(prev => ({ ...prev, key: e.target.value }))}
             />
             <div className="flex items-end">
-              <Button
-                variant="secondary"
-                size="sm"
+              <RippleButton
+                variant="soft"
+                color="blue"
                 onClick={() => fetchCacheContent()}
                 className="w-full"
               >
-                Apply Filters
-              </Button>
+                <span className="material-icons">search</span>
+                <span>Apply Filters</span>
+              </RippleButton>
             </div>
           </div>
         </div>

@@ -110,7 +110,7 @@ export async function Test(req: BunRequest, _user: AuthUser): Promise<Response> 
   return Response.json(testResult);
 }
 
-export async function POST(request: Request): Promise<Response> {
+export async function POST(request: BunRequest, _user: AuthUser): Promise<Response> {
   const [body, bodyError] = await tryAsync(() => request.json());
   if (bodyError) {
     console.error("DNS test error:", bodyError);
@@ -120,23 +120,33 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  const { method, domain, port = 53 } = body;
-
-  if (!domain || typeof domain !== 'string') {
+  // Handle two different test types:
+  // 1. NextDNS config test: { domain, configId }
+  // 2. UDP method test: { method: 'UDP', domain, port }
+  
+  if (body.configId && body.domain) {
+    // NextDNS config test - handle it directly
+    const { domain, configId } = body;
+    return await testNextDNSConfig(domain, configId);
+  }
+  
+  if (body.method && body.domain) {
+    const { method, domain, port = 53 } = body;
+    
+    if (method === 'UDP') {
+      // Test UDP DNS query regardless of server status
+      const result = await testUDPQuery(domain, port);
+      return Response.json(result);
+    }
+    
     return Response.json(
-      { error: "Domain is required" },
+      { error: `Unsupported test method: ${method}` },
       { status: 400 }
     );
   }
 
-  if (method === 'UDP') {
-    // Test UDP DNS query regardless of server status
-    const result = await testUDPQuery(domain, port);
-    return Response.json(result);
-  }
-
   return Response.json(
-    { error: "Unsupported test method" },
+    { error: "Invalid request format. Expected either { domain, configId } or { method, domain, port }" },
     { status: 400 }
   );
 }
@@ -292,6 +302,76 @@ function parseDNSResponse(response: Buffer): string[] {
   return ips;
 }
 
+async function testNextDNSConfig(domain: string, configId: string) {
+  const [testResult, testError] = await tryAsync(async () => {
+    // Validate config ID format first
+    if (!configId || configId.length < 6) {
+      throw new Error("Invalid NextDNS config ID format");
+    }
+    
+    // Test the NextDNS config directly without server restart
+    // Create a temporary NextDNS provider with the test config
+    const { NextDNSProvider } = await import('@src/dns/providers');
+    const testProvider = new NextDNSProvider(configId);
+    
+    // Strategy: Compare responses between the test config and a known invalid config
+    // If they're identical, the test config is likely invalid too
+    
+    // Test with the provided config
+    const query = createDNSQuery(domain);
+    const startTime = Date.now();
+    const responseBuffer = await testProvider.resolve(query);
+    const duration = Date.now() - startTime;
+    const ips = parseDNSResponse(responseBuffer);
+    
+    // Test with a definitely invalid config for comparison
+    const invalidProvider = new NextDNSProvider('invalid999');
+    const invalidResponse = await invalidProvider.resolve(query);
+    const invalidIps = parseDNSResponse(invalidResponse);
+    
+    // Check if this looks like a valid DNS response
+    if (responseBuffer.length < 12) {
+      throw new Error("Invalid DNS response received");
+    }
+    
+    if (ips.length === 0) {
+      throw new Error("No IP addresses resolved");
+    }
+
+    // Compare responses - if they're identical, the config is likely invalid
+    const testIpsSorted = [...ips].sort().join(',');
+    const invalidIpsSorted = [...invalidIps].sort().join(',');
+    
+    if (testIpsSorted === invalidIpsSorted) {
+      throw new Error(`Config ID ${configId} appears to be invalid. It returned identical results to a known invalid config (${testIpsSorted}). NextDNS may be falling back to unfiltered DNS.`);
+    }
+
+    return {
+      success: true,
+      domain,
+      configId,
+      resolvedAddress: ips[0],
+      ips: ips,
+      duration,
+      result: `DNS resolution successful - resolved to ${ips[0]} (${ips.length} addresses found). Config validation: Passed (different from invalid config)`,
+    };
+  });
+
+  if (testError) {
+    return Response.json({
+      success: false,
+      domain,
+      configId,
+      error: `DNS resolution failed: ${testError.message}`,
+    }, { status: 200 });
+  }
+
+  return Response.json(testResult);
+}
+
 export default {
-  test: { GET: Auth.guard(Test) },
+  test: { 
+    GET: Auth.guard(Test), 
+    POST: Auth.guard(POST) 
+  },
 };

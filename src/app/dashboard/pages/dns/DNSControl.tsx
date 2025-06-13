@@ -1,7 +1,12 @@
-import { Button, FloatingLabelInput, Card } from "@app_components/index";
+import { Flex } from "@radix-ui/themes";
 import { useState } from "react";
+import {
+  FloatingLabelNumber,
+  RippleButton,
+  CollapsibleCard,
+} from "@app/components/index";
 import { useDNSStore } from "@app/stores/dnsStore";
-import { tryAsync } from '@src/utils/try';
+import { tryAsync } from "@src/utils/try";
 
 export default function DNSControl() {
   const {
@@ -50,19 +55,21 @@ export default function DNSControl() {
       }
     }
 
-    let result, error;
-    
+    let error;
+
     if (dnsStatus.enabled) {
-      [result, error] = await tryAsync(stopServer);
+      [, error] = await tryAsync(stopServer);
     } else {
-      [result, error] = await tryAsync(() => startServer({
-        port: dnsConfig.port,
-        enableWhitelist: dnsConfig.enableWhitelist,
-        secondaryDns: dnsConfig.secondaryDns,
-        nextdnsConfigId: dnsConfig.nextdnsConfigId,
-      }));
+      [, error] = await tryAsync(() =>
+        startServer({
+          port: dnsConfig.port,
+          enableWhitelist: dnsConfig.enableWhitelist,
+          secondaryDns: dnsConfig.secondaryDns,
+          nextdnsConfigId: dnsConfig.nextdnsConfigId,
+        })
+      );
     }
-    
+
     if (error) {
       console.error("Failed to toggle DNS server:", error);
       alert("Failed to toggle DNS server");
@@ -70,34 +77,34 @@ export default function DNSControl() {
   };
 
   return (
-    <Card title="DNS Proxy Server">
-      <div className="flex items-center gap-4">
+    <CollapsibleCard title="DNS Proxy Server">
+      <Flex direction="row" gap="3">
         {/* Port Input */}
-        <div className="flex-1">
-          <FloatingLabelInput
-            label="DNS Server Port"
-            type="number"
+        <div className="w-[200px]">
+          <FloatingLabelNumber
+            label="UDP Server Port"
             value={String(dnsConfig.port || 53)}
             onChange={handlePortChange}
-            error={portError}
-            min="1"
-            max="65535"
+            status={portError ? "error" : undefined}
+            message={portError}
+            min={1}
+            max={65535}
             disabled={dnsStatus.enabled}
           />
         </div>
 
         {/* Start/Stop Button */}
         <div className="flex-shrink-0">
-          <Button
-            variant={dnsStatus.enabled ? "secondary" : "primary"}
-            size="lg"
+          <RippleButton
+            variant="soft"
+            color={dnsStatus.enabled ? "red" : "green"}
             onClick={toggleDnsServer}
-            isLoading={dnsLoading}
-            icon={dnsStatus.enabled ? "stop" : "play_arrow"}
+            loading={dnsLoading}
             className="min-w-[140px]"
           >
-            {dnsStatus.enabled ? "Stop Server" : "Start Server"}
-          </Button>
+            <span className="material-icons">{dnsStatus.enabled ? "stop" : "play_arrow"}</span>
+            <span>{dnsStatus.enabled ? "Stop Server" : "Start UDP Server"}</span>
+          </RippleButton>
         </div>
 
         {/* Status */}
@@ -119,7 +126,7 @@ export default function DNSControl() {
             )}
           </div>
         </div>
-      </div>
-    </Card>
+      </Flex>
+    </CollapsibleCard>
   );
 }

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useAuthStore } from "@app_stores/authStore";
 import { useValidationStore } from "@app_stores/validationStore";
-import { Button, FloatingLabelInput } from "@app_components/index";
+import { Button, FloatingLabelInput } from "@app/components/index";
 import { tryAsync } from '@src/utils/try';
 
 export default function SignIn() {
@@ -55,7 +55,8 @@ export default function SignIn() {
           onChange={handleEmailOrUsernameChange}
           disabled={isLoading}
           required
-          error={emailOrUsernameError}
+          status={emailOrUsernameError ? "error" : undefined}
+          message={emailOrUsernameError}
         />
         <FloatingLabelInput
           type="password"

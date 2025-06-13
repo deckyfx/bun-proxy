@@ -1,21 +1,21 @@
-import {
-  Button,
-  Select,
-  Tabs,
-  type TableColumn,
-} from "@app/components/index";
+import { RippleButton, Select, Tabs } from "@app/components/index";
+import { type TableColumn } from "@app/components/index";
 import LogsStreamTab from "./LogsStreamTab";
 import LogsHistoryTab from "./LogsHistoryTab";
 import { useState, useEffect } from "react";
-import { DRIVER_TYPES, type DriversResponse, type DriverStatus, type DriverListResponse } from "@src/types/driver";
-import type { LogEntry, DecodedPacket, ServerEventLogEntry } from "@src/types/dns-unified";
+import { DRIVER_TYPES, type DriversResponse } from "@src/types/driver";
+import type {
+  LogEntry,
+  DecodedPacket,
+  ServerEventLogEntry,
+} from "@src/types/dns-unified";
 import { useDnsLogStore } from "@app/stores/dnsLogStore";
 import { useDialogStore } from "@app/stores/dialogStore";
 import { useDnsCacheStore } from "@app/stores/dnsCacheStore";
 import { useDnsBlacklistStore } from "@app/stores/dnsBlacklistStore";
 import { useDnsWhitelistStore } from "@app/stores/dnsWhitelistStore";
 import { sseClient } from "@src/utils/SSEClient";
-import { tryAsync, trySync } from '@src/utils/try';
+import { tryAsync, trySync } from "@src/utils/try";
 
 interface LogsDriverProps {
   drivers: DriversResponse | null;
@@ -43,7 +43,7 @@ const tableColumns: TableColumn<LogEntry>[] = [
     key: "timestamp",
     label: "Time",
     render: (value) => {
-      if (typeof value === 'number') {
+      if (typeof value === "number") {
         return new Date(value).toLocaleTimeString();
       }
       return String(value);
@@ -54,7 +54,10 @@ const tableColumns: TableColumn<LogEntry>[] = [
     label: "Type",
     render: (_value, log) => {
       if (log.type === "server_event") {
-        const eventType = 'eventType' in log ? (log as { eventType: string }).eventType : undefined;
+        const eventType =
+          "eventType" in log
+            ? (log as { eventType: string }).eventType
+            : undefined;
         return (
           <span
             className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
@@ -184,7 +187,7 @@ const tableColumns: TableColumn<LogEntry>[] = [
             const answers = packet.answers;
             if (Array.isArray(answers)) {
               for (const answer of answers) {
-                if (answer.type === 'A' || answer.type === 'AAAA') {
+                if (answer.type === "A" || answer.type === "AAAA") {
                   const data = (answer as { data: string }).data;
                   if (data) {
                     ips.push(data);
@@ -195,8 +198,8 @@ const tableColumns: TableColumn<LogEntry>[] = [
           }
           return ips;
         };
-        
-        const [extractedAddresses, extractError] = trySync(() => 
+
+        const [extractedAddresses, extractError] = trySync(() =>
           log.packet ? extractIpAddresses(log.packet) : []
         );
         if (!extractError) {
@@ -234,8 +237,14 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
   });
 
   // Use driver stores
-  const { getContent, content, loading: historyLoading, error, clearContent, setDriver } =
-    useDnsLogStore();
+  const {
+    getContent,
+    content,
+    loading: historyLoading,
+    error,
+    clearContent,
+    setDriver,
+  } = useDnsLogStore();
   const { addEntry: addToCache } = useDnsCacheStore();
   const { addEntry: addToBlacklist } = useDnsBlacklistStore();
   const { addEntry: addToWhitelist } = useDnsWhitelistStore();
@@ -257,15 +266,18 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
     const logEventUnsubscriber = sseClient.subscribe(
       "dns/log/event",
       (logEntry) => {
-        if (logEntry && 'type' in logEntry && (logEntry.type === 'request' || logEntry.type === 'response' || logEntry.type === 'server_event')) {
+        if (
+          logEntry &&
+          "type" in logEntry &&
+          (logEntry.type === "request" ||
+            logEntry.type === "response" ||
+            logEntry.type === "server_event")
+        ) {
           const typedLogEntry = logEntry as LogEntry;
           setLogs((prev) => {
             // Add new entry and keep last 100, sorted by timestamp (newest first)
             const updated = [typedLogEntry, ...prev]
-              .sort(
-                (a: LogEntry, b: LogEntry) =>
-                  b.timestamp - a.timestamp
-              )
+              .sort((a: LogEntry, b: LogEntry) => b.timestamp - a.timestamp)
               .slice(0, 100);
             return updated;
           });
@@ -315,8 +327,9 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
 
   // Show response details in a custom dialog
   const showResponseDetails = (log: LogEntry) => {
-    const responseLog = log.type === 'response' ? log : null;
-    const domain = responseLog && "query" in responseLog ? responseLog.query?.name : "";
+    const responseLog = log.type === "response" ? log : null;
+    const domain =
+      responseLog && "query" in responseLog ? responseLog.query?.name : "";
 
     const content = (
       <div className="space-y-4">
@@ -335,7 +348,9 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
               Query Type
             </label>
             <div className="p-2 bg-gray-50 rounded text-sm">
-              {responseLog && "query" in responseLog ? responseLog.query?.type : "N/A"}
+              {responseLog && "query" in responseLog
+                ? responseLog.query?.type
+                : "N/A"}
             </div>
           </div>
           <div>
@@ -343,7 +358,9 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
               Client IP
             </label>
             <div className="p-2 bg-gray-50 rounded text-sm font-mono">
-              {responseLog && "client" in responseLog ? responseLog.client?.address : "N/A"}
+              {responseLog && "client" in responseLog
+                ? responseLog.client?.address
+                : "N/A"}
             </div>
           </div>
           <div>
@@ -351,7 +368,9 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
               Provider
             </label>
             <div className="p-2 bg-gray-50 rounded text-sm">
-              {responseLog && "processing" in responseLog ? responseLog.processing?.provider || "N/A" : "N/A"}
+              {responseLog && "processing" in responseLog
+                ? responseLog.processing?.provider || "N/A"
+                : "N/A"}
             </div>
           </div>
         </div>
@@ -371,11 +390,13 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
                 Failed
               </span>
             )}
-            {responseLog && "processing" in responseLog && responseLog.processing?.responseTime && (
-              <span className="text-sm text-gray-600">
-                Response Time: {responseLog.processing.responseTime}ms
-              </span>
-            )}
+            {responseLog &&
+              "processing" in responseLog &&
+              responseLog.processing?.responseTime && (
+                <span className="text-sm text-gray-600">
+                  Response Time: {responseLog.processing.responseTime}ms
+                </span>
+              )}
           </div>
         </div>
 
@@ -385,40 +406,58 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
             Flags
           </label>
           <div className="flex gap-2">
-            {responseLog && "processing" in responseLog && responseLog.processing?.cached && (
-              <span className="inline-flex px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded">
-                Cached
-              </span>
-            )}
-            {responseLog && "processing" in responseLog && responseLog.processing?.blocked && (
-              <span className="inline-flex px-2 py-1 text-xs bg-red-100 text-red-800 rounded">
-                Blocked
-              </span>
-            )}
-            {responseLog && "processing" in responseLog && responseLog.processing?.whitelisted && (
-              <span className="inline-flex px-2 py-1 text-xs bg-green-100 text-green-800 rounded">
-                Whitelisted
-              </span>
-            )}
-            {!(responseLog && "processing" in responseLog && responseLog.processing?.cached) &&
-              !(responseLog && "processing" in responseLog && responseLog.processing?.blocked) &&
-              !(responseLog && "processing" in responseLog && responseLog.processing?.whitelisted) && (
-                <span className="text-sm text-gray-500">No flags</span>
+            {responseLog &&
+              "processing" in responseLog &&
+              responseLog.processing?.cached && (
+                <span className="inline-flex px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded">
+                  Cached
+                </span>
               )}
+            {responseLog &&
+              "processing" in responseLog &&
+              responseLog.processing?.blocked && (
+                <span className="inline-flex px-2 py-1 text-xs bg-red-100 text-red-800 rounded">
+                  Blocked
+                </span>
+              )}
+            {responseLog &&
+              "processing" in responseLog &&
+              responseLog.processing?.whitelisted && (
+                <span className="inline-flex px-2 py-1 text-xs bg-green-100 text-green-800 rounded">
+                  Whitelisted
+                </span>
+              )}
+            {!(
+              responseLog &&
+              "processing" in responseLog &&
+              responseLog.processing?.cached
+            ) &&
+              !(
+                responseLog &&
+                "processing" in responseLog &&
+                responseLog.processing?.blocked
+              ) &&
+              !(
+                responseLog &&
+                "processing" in responseLog &&
+                responseLog.processing?.whitelisted
+              ) && <span className="text-sm text-gray-500">No flags</span>}
           </div>
         </div>
 
         {/* Error Details */}
-        {responseLog && "processing" in responseLog && responseLog.processing?.error && (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Error
-            </label>
-            <div className="p-3 bg-red-50 border border-red-200 rounded text-sm text-red-800">
-              {responseLog.processing.error}
+        {responseLog &&
+          "processing" in responseLog &&
+          responseLog.processing?.error && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Error
+              </label>
+              <div className="p-3 bg-red-50 border border-red-200 rounded text-sm text-red-800">
+                {responseLog.processing.error}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
         {/* Resolved IPs */}
         <div>
@@ -435,7 +474,7 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
                   const answers = packet.answers;
                   if (Array.isArray(answers)) {
                     for (const answer of answers) {
-                      if (answer.type === 'A' || answer.type === 'AAAA') {
+                      if (answer.type === "A" || answer.type === "AAAA") {
                         const data = (answer as { data: string }).data;
                         if (data) {
                           ips.push(data);
@@ -446,8 +485,8 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
                 }
                 return ips;
               };
-              
-              const [extractedAddresses, extractError] = trySync(() => 
+
+              const [extractedAddresses, extractError] = trySync(() =>
                 responseLog.packet ? extractIpAddresses(responseLog.packet) : []
               );
               if (!extractError) {
@@ -484,7 +523,9 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
             Timestamp
           </label>
           <div className="p-2 bg-gray-50 rounded text-sm">
-            {responseLog ? new Date(responseLog.timestamp).toLocaleString() : new Date().toLocaleString()}
+            {responseLog
+              ? new Date(responseLog.timestamp).toLocaleString()
+              : new Date().toLocaleString()}
           </div>
         </div>
 
@@ -495,34 +536,30 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
               Quick Actions for "{domain}"
             </label>
             <div className="flex gap-2 flex-wrap">
-              <Button
-                variant="secondary"
-                size="sm"
+              <RippleButton
+                variant="soft"
+                color="blue"
                 onClick={() => handleAddToCache(domain)}
               >
-                <span className="material-icons text-sm mr-1">memory</span>
-                Add to Cache
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
+                <span className="material-icons">add</span>
+                <span>Add to Cache</span>
+              </RippleButton>
+              <RippleButton
+                variant="soft"
+                color="red"
                 onClick={() => handleAddToBlacklist(domain)}
-                className="text-red-600 hover:text-red-700 hover:bg-red-50"
               >
-                <span className="material-icons text-sm mr-1">block</span>
-                Add to Blacklist
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
+                <span className="material-icons">block</span>
+                <span>Add to Blacklist</span>
+              </RippleButton>
+              <RippleButton
+                variant="soft"
+                color="green"
                 onClick={() => handleAddToWhitelist(domain)}
-                className="text-green-600 hover:text-green-700 hover:bg-green-50"
               >
-                <span className="material-icons text-sm mr-1">
-                  check_circle
-                </span>
-                Add to Whitelist
-              </Button>
+                <span className="material-icons">verified</span>
+                <span>Add to Whitelist</span>
+              </RippleButton>
             </div>
           </div>
         )}
@@ -540,20 +577,20 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
     // Create a simple cache entry for manual addition
     const cacheValue = {
       cached: true,
-      addedFrom: 'logs',
-      timestamp: new Date().toISOString()
+      addedFrom: "logs",
+      timestamp: new Date().toISOString(),
     };
     await addToCache(domain, cacheValue, 3600); // 1 hour TTL
   };
 
   // Handler to add domain to blacklist
   const handleAddToBlacklist = async (domain: string) => {
-    await addToBlacklist(domain, 'Added from DNS logs', 'logs');
+    await addToBlacklist(domain, "Added from DNS logs", "logs");
   };
 
   // Handler to add domain to whitelist
   const handleAddToWhitelist = async (domain: string) => {
-    await addToWhitelist(domain, 'Added from DNS logs', 'logs');
+    await addToWhitelist(domain, "Added from DNS logs", "logs");
   };
 
   // Clear all filters
@@ -591,12 +628,14 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
       ...(currentFilters.level && { level: currentFilters.level }),
       ...(currentFilters.domain && { domain: currentFilters.domain }),
       ...(currentFilters.provider && { provider: currentFilters.provider }),
-      ...(currentFilters.success && { success: currentFilters.success === "true" }),
+      ...(currentFilters.success && {
+        success: currentFilters.success === "true",
+      }),
       limit: currentFilters.limit,
     };
 
     const [, error] = await tryAsync(() => getContent(filterConfig));
-    
+
     if (error) {
       // Error handling is now done in the store, but add safety net
       console.error("Error in fetchLogHistory:", error);
@@ -608,98 +647,108 @@ export default function LogsDriver({ drivers, loading }: LogsDriverProps) {
 
   return (
     <div className="space-y-4">
-        {/* Driver Configuration */}
-        <div className="flex items-center gap-4">
-          <div className="flex-1">
-            <Select
-              label="Driver Implementation"
-              value={driverForm.driver}
-              onChange={(value) => handleDriverFormChange(value)}
-              options={availableDrivers.map((driver: string) => ({
-                value: driver,
-                label: formatDriverName(driver),
-              }))}
-            />
-          </div>
-          <div className="flex items-end">
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={handleSetDriver}
-              disabled={!driverForm.driver || loading}
-            >
-              Set Driver
-            </Button>
-          </div>
+      {/* Driver Configuration */}
+      <div className="flex items-end gap-4">
+        <div className="flex-1">
+          <Select
+            label="Driver Implementation"
+            labelPosition="top"
+            value={driverForm.driver}
+            onChange={(value) => handleDriverFormChange(value)}
+            options={availableDrivers.map((driver: string) => ({
+              value: driver,
+              label: formatDriverName(driver),
+            }))}
+          />
         </div>
-
-        {/* Driver Status */}
-        <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-          <span className="material-icons text-lg text-gray-600">
-            description
-          </span>
-          <div>
-            <div className="font-medium text-gray-900">
-              Current Driver:{" "}
-              {formatDriverName(currentDriver?.implementation || "")}
-            </div>
-          </div>
-        </div>
-
-        {/* Clear Logs Button */}
-        <div className="flex justify-end">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={handleClearLogsClick}
-            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+        <div className="flex items-end">
+          <RippleButton
+            variant="solid"
+            color="blue"
+            onClick={handleSetDriver}
+            disabled={!driverForm.driver || loading}
           >
-            <span className="material-icons text-sm mr-1">clear_all</span>
-            Clear All Logs
-          </Button>
+            <span className="material-icons">settings</span>
+            <span>Set Driver</span>
+          </RippleButton>
         </div>
-
-        {/* Tab Interface */}
-        <Tabs
-          tabs={[
-            {
-              id: 'stream',
-              label: 'Real-time Stream',
-              icon: 'stream',
-              content: (
-                <LogsStreamTab
-                  logs={logs}
-                  connected={connected}
-                  tableColumns={tableColumns}
-                  onRowClick={handleRowClick}
-                />
-              )
-            },
-            {
-              id: 'history',
-              label: 'History',
-              icon: 'history',
-              content: (
-                <LogsHistoryTab
-                  content={content && 'entries' in content && Array.isArray(content.entries) ? content.entries as LogEntry[] : null}
-                  loading={historyLoading}
-                  error={error ?? null}
-                  currentDriver={currentDriver ? { implementation: currentDriver.implementation, status: currentDriver.status } : null}
-                  tableColumns={tableColumns}
-                  filters={filters}
-                  onFiltersChange={(newFilters) => {
-                    setFilters(prev => ({ ...prev, ...newFilters }));
-                  }}
-                  onClearFilters={clearFilters}
-                  onFetchHistory={fetchLogHistory}
-                  onRowClick={handleRowClick}
-                />
-              )
-            }
-          ]}
-          defaultTab="stream"
-          className="border border-gray-200 rounded-lg bg-white"
-        />
       </div>
-    );
-  }
+
+      {/* Driver Status */}
+      <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+        <span className="material-icons text-lg text-gray-600">
+          description
+        </span>
+        <div>
+          <div className="font-medium text-gray-900">
+            Current Driver:{" "}
+            {formatDriverName(currentDriver?.implementation || "")}
+          </div>
+        </div>
+      </div>
+
+      {/* Clear Logs Button */}
+      <div className="flex justify-end">
+        <RippleButton variant="soft" color="red" onClick={handleClearLogsClick}>
+          <span className="material-icons">clear_all</span>
+          <span>Clear All Logs</span>
+        </RippleButton>
+      </div>
+
+      {/* Tab Interface */}
+      <Tabs
+        tabs={[
+          {
+            id: "stream",
+            label: "Real-time Stream",
+            icon: "stream",
+            content: (
+              <LogsStreamTab
+                logs={logs}
+                connected={connected}
+                tableColumns={tableColumns}
+                onRowClick={handleRowClick}
+              />
+            ),
+          },
+          {
+            id: "history",
+            label: "History",
+            icon: "history",
+            content: (
+              <LogsHistoryTab
+                content={
+                  content &&
+                  "entries" in content &&
+                  Array.isArray(content.entries)
+                    ? (content.entries as LogEntry[])
+                    : null
+                }
+                loading={historyLoading}
+                error={error ?? null}
+                currentDriver={
+                  currentDriver
+                    ? {
+                        implementation: currentDriver.implementation,
+                        status: currentDriver.status,
+                      }
+                    : null
+                }
+                tableColumns={tableColumns}
+                filters={filters}
+                onFiltersChange={(newFilters) => {
+                  setFilters((prev) => ({ ...prev, ...newFilters }));
+                }}
+                onClearFilters={clearFilters}
+                onFetchHistory={fetchLogHistory}
+                onRowClick={handleRowClick}
+              />
+            ),
+          },
+        ]}
+        defaultTab="stream"
+        className="border border-gray-200 rounded-lg bg-white"
+      />
+    </div>
+  );
+}

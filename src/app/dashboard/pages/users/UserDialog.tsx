@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FloatingLabelInput } from '@app/components/FloatingLabelInput';
+import { FloatingLabelInput } from '@app/components/index';
 import { Button } from '@app/components/Button';
 import { useValidationStore } from '@app/stores/validationStore';
 import { useDialogStore } from '@app/stores/dialogStore';
@@ -106,7 +106,8 @@ export function useUserDialog() {
             type="email"
             value={formData.email}
             onChange={handleEmailChange}
-            error={emailError}
+            status={emailError ? "error" : undefined}
+            message={emailError}
             disabled={submitting}
             required
           />
@@ -116,7 +117,8 @@ export function useUserDialog() {
             type="text"
             value={formData.username}
             onChange={handleUsernameChange}
-            error={usernameError}
+            status={usernameError ? "error" : undefined}
+            message={usernameError}
             disabled={submitting}
             required
           />

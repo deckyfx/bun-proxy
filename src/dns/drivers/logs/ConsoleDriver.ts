@@ -93,6 +93,10 @@ export class ConsoleDriver extends BaseDriver {
       logMessage = `[${timestamp}] ${level} ➤ ERR ${domain} (${queryType}) - ${
         entry.processing.error || "Unknown error"
       } [${requestId}]`;
+    } else if (entry.type === "server_event") {
+      // Error log format
+      const message = entry.message;
+      logMessage = ` - Server Event: ${message}`;
     } else {
       // Fallback for unknown log types
       logMessage = `[${timestamp}] ${level} ➤ UNKNOWN ${

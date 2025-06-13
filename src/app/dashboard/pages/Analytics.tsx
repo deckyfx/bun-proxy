@@ -1,8 +1,6 @@
 import { useEffect, useState } from "react";
 import { PageContainer } from "../components/PageContainer";
-import { Card } from "@app/components/Card";
-import { Button } from "@app/components/Button";
-import { Select } from "@app/components/Select";
+import { CollapsibleCard, RippleButton, Select } from "@app/components/index";
 import { useDNSMetricsStore } from "@app/stores/dnsMetricsStore";
 import { useDNSStore } from "@app/stores/dnsStore";
 
@@ -104,20 +102,21 @@ export default function Analytics() {
             />
           </div>
 
-          <div className="flex space-x-2">
-            <Button variant="secondary" onClick={fetchMetrics} isLoading={loading}>
-              Refresh
-            </Button>
-            <Button variant="secondary" onClick={resetMetrics}>
-              Reset
-            </Button>
+          <div className="flex gap-3">
+            <RippleButton variant="soft" color="green" onClick={fetchMetrics} loading={loading}>
+              <span className="material-icons">refresh</span>
+              <span>Refresh</span>
+            </RippleButton>
+            <RippleButton variant="soft" color="red" onClick={resetMetrics}>
+              <span className="material-icons">restart_alt</span>
+              <span>Reset</span>
+            </RippleButton>
           </div>
         </div>
 
         {/* Server Status */}
-        <Card>
+        <CollapsibleCard title="Server Status">
           <div className="p-6">
-            <h3 className="text-lg font-semibold mb-4">Server Status</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div>
                 <div className="text-2xl font-bold text-blue-600">
@@ -145,12 +144,11 @@ export default function Analytics() {
               </div>
             </div>
           </div>
-        </Card>
+        </CollapsibleCard>
 
         {/* Query Metrics Overview */}
-        <Card>
+        <CollapsibleCard title="Query Metrics">
           <div className="p-6">
-            <h3 className="text-lg font-semibold mb-4">Query Metrics</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div>
                 <div className="text-2xl font-bold text-blue-600">
@@ -201,13 +199,12 @@ export default function Analytics() {
               </div>
             </div>
           </div>
-        </Card>
+        </CollapsibleCard>
 
         {/* Top Domains & Query Types */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Card>
+          <CollapsibleCard title="Top Domains">
             <div className="p-6">
-              <h3 className="text-lg font-semibold mb-4">Top Domains</h3>
               <div className="space-y-2">
                 {metrics.queryMetrics.topDomains.slice(0, 10).map((domain) => (
                   <div key={domain.domain} className="flex justify-between items-center">
@@ -220,11 +217,10 @@ export default function Analytics() {
                 )}
               </div>
             </div>
-          </Card>
+          </CollapsibleCard>
 
-          <Card>
+          <CollapsibleCard title="Query Types">
             <div className="p-6">
-              <h3 className="text-lg font-semibold mb-4">Query Types</h3>
               <div className="space-y-2">
                 {Object.entries(metrics.queryMetrics.queryTypes)
                   .sort(([,a], [,b]) => b - a)
@@ -240,13 +236,12 @@ export default function Analytics() {
                 )}
               </div>
             </div>
-          </Card>
+          </CollapsibleCard>
         </div>
 
         {/* Provider Performance */}
-        <Card>
+        <CollapsibleCard title="Provider Performance">
           <div className="p-6">
-            <h3 className="text-lg font-semibold mb-4">Provider Performance</h3>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -285,7 +280,7 @@ export default function Analytics() {
               )}
             </div>
           </div>
-        </Card>
+        </CollapsibleCard>
 
         {/* Last Updated */}
         <div className="text-sm text-gray-500 text-center">

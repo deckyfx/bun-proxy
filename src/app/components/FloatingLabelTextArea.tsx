@@ -1,20 +1,18 @@
 import React, { useState, useRef, useEffect } from "react";
-import { TextField } from "@radix-ui/themes";
+import { TextArea } from "@radix-ui/themes";
 import { cn } from "@app/utils/cn";
 
-interface FloatingLabelInputProps extends Omit<React.ComponentProps<typeof TextField.Root>, 'placeholder'> {
+interface FloatingLabelTextAreaProps extends Omit<React.ComponentProps<typeof TextArea>, 'placeholder'> {
   label: string;
   id?: string;
   status?: 'error' | 'warning' | 'success';
   message?: string;
-  icon?: React.ReactNode;
-  iconPosition?: 'left' | 'right';
 }
 
-export function FloatingLabelInput({ label, id, className, status, message, icon, iconPosition = 'left', ...props }: FloatingLabelInputProps) {
+export function FloatingLabelTextArea({ label, id, className, status, message, ...props }: FloatingLabelTextAreaProps) {
   const [isFocused, setIsFocused] = useState(false);
   const [hasValue, setHasValue] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const textAreaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleFocus = () => {
     setIsFocused(true);
@@ -22,10 +20,10 @@ export function FloatingLabelInput({ label, id, className, status, message, icon
 
   const handleBlur = () => {
     setIsFocused(false);
-    setHasValue(inputRef.current?.value !== '');
+    setHasValue(textAreaRef.current?.value !== '');
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setHasValue(e.target.value !== '');
     if (props.onChange) {
       props.onChange(e);
@@ -34,7 +32,7 @@ export function FloatingLabelInput({ label, id, className, status, message, icon
 
   // Check for initial value on mount
   useEffect(() => {
-    if (inputRef.current?.value) {
+    if (textAreaRef.current?.value) {
       setHasValue(true);
     }
   }, [props.value, props.defaultValue]);
@@ -74,41 +72,23 @@ export function FloatingLabelInput({ label, id, className, status, message, icon
 
   return (
     <div className={cn("relative", message && "mb-6", className)}>
-      <div className="relative">
-        <TextField.Root
-          ref={inputRef}
-          id={id}
-          onFocus={handleFocus}
-          onBlur={handleBlur}
-          onChange={handleChange}
-          className={cn([
-            "floating-input", 
-            status && colors.border,
-            icon && iconPosition === 'left' && "icon-left",
-            icon && iconPosition === 'right' && "icon-right"
-          ])}
-          {...props}
-        />
-        
-        {icon && (
-          <div className={cn([
-            "absolute",
-            "top-1/2",
-            "-translate-y-1/2",
-            "flex",
-            "items-center",
-            "justify-center",
-            "w-5",
-            "h-5",
-            "text-gray-500",
-            "pointer-events-none",
-            iconPosition === 'left' ? "left-3" : "right-3"
-          ])}>
-            {icon}
-          </div>
-        )}
-      </div>
-      
+      <TextArea
+        ref={textAreaRef}
+        id={id}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
+        onChange={handleChange}
+        className={cn(["floating-input", status && colors.border])}
+        style={{ 
+          paddingTop: '1.5rem',
+          paddingBottom: '0.5rem',
+          minHeight: '6rem',
+          maxHeight: '12rem',
+          resize: 'vertical',
+          overflow: 'auto'
+        }}
+        {...props}
+      />
       <label
         htmlFor={id}
         className={cn([
@@ -125,13 +105,11 @@ export function FloatingLabelInput({ label, id, className, status, message, icon
             "text-sm",
             "bg-white",
             "px-1",
-            "-translate-y-1/2",
-            icon && iconPosition === 'left' ? "translate-x-7" : "translate-x-0"
+            "-translate-y-1/2"
           ] : [
-            "top-1/2",
-            "-translate-y-1/2",
-            "text-base",
-            icon && iconPosition === 'left' ? "translate-x-7" : "translate-x-0"
+            "top-4",
+            "left-3",
+            "text-base"
           ]
         ])}
       >

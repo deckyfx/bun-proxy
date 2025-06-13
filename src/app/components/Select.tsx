@@ -1,63 +1,83 @@
-import React from 'react';
-import { Icon } from './Icon';
+import { Select as RadixSelect, Flex, Text } from "@radix-ui/themes";
+import { cn } from "@app/utils/cn";
 
 interface SelectOption {
   value: string;
   label: string;
-  description?: string;
 }
 
 interface SelectProps {
-  options: SelectOption[];
+  label?: string;
   value: string;
   onChange: (value: string) => void;
+  options: SelectOption[];
   disabled?: boolean;
-  label?: string;
-  description?: string;
+  placeholder?: string;
   className?: string;
+  size?: "1" | "2" | "3";
+  variant?: "classic" | "surface" | "soft";
+  labelPosition?: "top" | "left";
 }
 
-export function Select({ 
-  options, 
-  value, 
-  onChange, 
-  disabled = false, 
-  label, 
-  description,
-  className = '' 
+export function Select({
+  label,
+  value,
+  onChange,
+  options,
+  disabled,
+  placeholder = "Select an option...",
+  className,
+  size = "2",
+  variant = "classic",
+  labelPosition = "top",
 }: SelectProps) {
-  return (
-    <div className={className}>
-      {label && (
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          {label}
-        </label>
-      )}
-      <div className="relative">
-        <select
-          value={value}
-          onChange={(e) => !disabled && onChange(e.target.value)}
-          disabled={disabled}
-          className={`appearance-none block w-full pl-3 pr-10 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm ${
-            disabled ? 'bg-gray-100 cursor-not-allowed text-gray-400' : 'hover:border-gray-400'
-          } transition-colors duration-200`}
-        >
-          {options.map((option) => (
-            <option key={option.value} value={option.value}>
+  const selectComponent = (
+    <RadixSelect.Root
+      value={value}
+      onValueChange={onChange}
+      disabled={disabled}
+      size={size}
+    >
+      <RadixSelect.Trigger 
+        className="w-full" 
+        placeholder={placeholder}
+        variant={variant}
+      />
+      <RadixSelect.Content>
+        {options.map((option) => {
+          return (
+            <RadixSelect.Item key={option.value} value={option.value}>
               {option.label}
-            </option>
-          ))}
-        </select>
-        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
-          <Icon 
-            name="expand_more" 
-            className={`h-5 w-5 ${disabled ? 'text-gray-400' : 'text-gray-500'}`} 
-          />
+            </RadixSelect.Item>
+          );
+        })}
+      </RadixSelect.Content>
+    </RadixSelect.Root>
+  );
+
+  if (labelPosition === "left") {
+    return (
+      <Flex align="center" gap="3" className={cn(className)}>
+        {label && (
+          <Text size="2" weight="medium" className="text-gray-700" style={{ minWidth: "100px" }}>
+            {label}:
+          </Text>
+        )}
+        <div className="flex-1">
+          {selectComponent}
         </div>
-      </div>
-      {description && (
-        <p className="text-xs text-gray-500 mt-1">{description}</p>
+      </Flex>
+    );
+  }
+
+  return (
+    <Flex direction="column" gap="2" className={cn(className)}>
+      {label && (
+        <Text size="2" weight="medium" className="text-gray-700">
+          {label}
+        </Text>
       )}
-    </div>
+      {selectComponent}
+    </Flex>
   );
 }

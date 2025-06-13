@@ -42,10 +42,8 @@ class DNSEventService {
 
   // Handle real-time log events from DNS server
   private handleLogEvent(logEntry: LogEntry): void {
-    // Type guard to only emit DNS log events, not server events
-    if (logEntry.type !== 'server_event') {
-      sseResponder.emitDNSLogEvent(logEntry);
-    }
+    // Emit all log events (including server events) to log stream
+    sseResponder.emitDNSLogEvent(logEntry as any);
   }
 
   // Emit DNS server status change (called by DNS manager)

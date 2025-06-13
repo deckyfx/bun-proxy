@@ -1,4 +1,4 @@
-import { Button, Card, Tabs, type TabItem } from "@app/components/index";
+import { RippleButton, CollapsibleCard, Tabs } from "@app/components/index";
 import { useEffect } from "react";
 import { useDnsDriverStore } from "@app/stores/dnsDriverStore";
 import LogsDriver from "./LogsDriver";
@@ -24,29 +24,28 @@ export default function DNSDriver() {
     <>
       {/* Driver Error Display */}
       {driversError && (
-        <Card title="Driver Error">
+        <CollapsibleCard title="Driver Error">
           <div className="flex items-center justify-between p-4 bg-red-50 rounded-lg">
             <span className="text-red-800">{driversError}</span>
-            <Button
-              variant="secondary"
-              size="sm"
+            <RippleButton
+              variant="soft"
               onClick={clearError}
             >
               Clear
-            </Button>
+            </RippleButton>
           </div>
-        </Card>
+        </CollapsibleCard>
       )}
 
       {/* Driver Sections */}
       {driversLoading ? (
-        <Card title="Loading Drivers...">
+        <CollapsibleCard title="Loading Drivers...">
           <div className="flex items-center justify-center py-8">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
           </div>
-        </Card>
+        </CollapsibleCard>
       ) : (
-        <Card title="DNS Drivers">
+        <CollapsibleCard title="DNS Drivers">
           <Tabs
             tabs={[
               {
@@ -76,7 +75,7 @@ export default function DNSDriver() {
             ]}
             defaultTab="logs"
           />
-        </Card>
+        </CollapsibleCard>
       )}
     </>
   );

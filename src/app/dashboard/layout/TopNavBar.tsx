@@ -1,4 +1,4 @@
-import { Button } from "@app_components/index";
+import { RippleButton } from "@app/components/index";
 import { useAuthStore } from "@app_stores/authStore";
 import { tryAsync } from '@src/utils/try';
 
@@ -26,15 +26,13 @@ export function TopNavBar() {
               <span className="font-medium">{user.name}</span>
               <div className="text-xs text-gray-400">{user.email}</div>
             </div>
-            <Button
+            <RippleButton
               onClick={handleLogout}
-              variant="secondary"
-              size="sm"
-              icon="logout"
+              variant="soft"
               className="text-red-300 hover:text-red-200 hover:bg-red-900/20 bg-gray-700"
             >
-              Logout
-            </Button>
+              <span>Logout</span>
+            </RippleButton>
           </div>
         )}
       </div>
